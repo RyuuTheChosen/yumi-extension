@@ -105,8 +105,12 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
   const sentenceBufferRef = useRef<string>('')
   const streamingTtsFailedRef = useRef<boolean>(false)
   
-  // Port-based streaming connection
-  const { connected, sendMessage: sendViaPort } = usePortConnection()
+  // Port-based streaming connection - emit bus events for streaming TTS
+  const { connected, sendMessage: sendViaPort } = usePortConnection({
+    onChunk: (delta: string) => {
+      bus.emit('stream', delta)
+    },
+  })
   
   // Refs for stable callback closures (must be declared before any useEffect/useCallback)
   const statusRef = useRef(status)
