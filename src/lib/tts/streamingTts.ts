@@ -59,6 +59,7 @@ export class StreamingTTSService {
   private audioEndCallback: AudioEndCallback | null = null
   private analyserNode: AnalyserNode | null = null
   private gainNode: GainNode | null = null
+  private streamDone = false // Track if server sent 'done' message
 
   constructor(
     private hubUrl: string,
@@ -104,6 +105,7 @@ export class StreamingTTSService {
     }
 
     this.setState('connecting')
+    this.streamDone = false
 
     // Initialize audio context
     if (!this.audioContext) {
@@ -179,12 +181,17 @@ export class StreamingTTSService {
         break
 
       case 'audio':
+        console.log('[StreamingTTS] Received audio chunk')
         this.handleAudioChunk(message.audio)
         break
 
       case 'done':
-        console.log('[StreamingTTS] Audio stream complete')
-        // Audio end will be signaled when queue is empty
+        console.log('[StreamingTTS] Server signaled stream complete')
+        this.streamDone = true
+        // If queue is already empty, signal audio end now
+        if (!this.isPlaying && this.audioQueue.length === 0) {
+          this.audioEndCallback?.()
+        }
         break
 
       case 'error':
@@ -233,8 +240,9 @@ export class StreamingTTSService {
 
     if (this.audioQueue.length === 0) {
       this.isPlaying = false
-      // Signal audio end if we're done
-      if (this.state === 'connected') {
+      // Only signal audio end if stream is done (server sent 'done' or close() was called)
+      if (this.streamDone) {
+        this.setState('disconnected')
         this.audioEndCallback?.()
       }
       return
@@ -281,6 +289,8 @@ export class StreamingTTSService {
       return
     }
 
+    console.log(`[StreamingTTS] Sending: "${text.slice(0, 50)}${text.length > 50 ? '...' : ''}"${flush ? ' (flush)' : ''}`)
+
     const msg: StreamingTTSOutMessage = {
       type: 'text',
       text,
@@ -300,7 +310,8 @@ export class StreamingTTSService {
   }
 
   /**
-   * Close the WebSocket connection and cleanup.
+   * Close the WebSocket connection gracefully.
+   * Audio queue is preserved to let pending audio finish playing.
    */
   close(): void {
     if (this.ws) {
@@ -312,16 +323,36 @@ export class StreamingTTSService {
       this.ws = null
     }
 
-    // Clear audio queue but let current playback finish
-    this.audioQueue = []
-    this.setState('disconnected')
+    // Mark stream as done so audioEndCallback fires when queue empties
+    this.streamDone = true
+
+    // Don't clear audio queue - let pending audio finish playing
+    // If nothing is playing but queue has items, start playback
+    if (!this.isPlaying && this.audioQueue.length > 0) {
+      this.playNextChunk()
+    }
+
+    // If already done playing, signal now
+    if (!this.isPlaying && this.audioQueue.length === 0) {
+      this.setState('disconnected')
+      this.audioEndCallback?.()
+    }
   }
 
   /**
-   * Stop all playback and cleanup resources.
+   * Stop all playback immediately and cleanup all resources.
    */
   destroy(): void {
-    this.close()
+    // Close WebSocket without waiting for audio
+    if (this.ws) {
+      this.ws.close()
+      this.ws = null
+    }
+
+    // Clear audio queue to stop playback
+    this.audioQueue = []
+    this.isPlaying = false
+    this.streamDone = true
 
     if (this.audioContext) {
       this.audioContext.close()
@@ -330,6 +361,7 @@ export class StreamingTTSService {
 
     this.analyserNode = null
     this.gainNode = null
+    this.setState('disconnected')
     this.stateCallbacks.clear()
     this.audioEndCallback = null
   }

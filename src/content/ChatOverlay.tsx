@@ -217,6 +217,29 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
       sentenceBufferRef.current = ''
       streamingTtsFailedRef.current = false
 
+      // Track WebSocket ready state
+      let wsReady = false
+      let pendingSentences: string[] = []
+
+      // Subscribe to stream events FIRST (before connecting) to capture all chunks
+      streamUnsubscribe = bus.on('stream', (delta: string) => {
+        // Accumulate text and detect sentence boundaries
+        sentenceBufferRef.current += delta
+        const { sentences, remaining } = extractCompleteSentences(sentenceBufferRef.current)
+        sentenceBufferRef.current = remaining
+
+        // If WebSocket is ready, send immediately; otherwise buffer
+        for (const sentence of sentences) {
+          if (sentence.trim()) {
+            if (wsReady && streamingTtsRef.current) {
+              streamingTtsRef.current.sendText(sentence)
+            } else {
+              pendingSentences.push(sentence)
+            }
+          }
+        }
+      })
+
       // Get voice from companion
       try {
         const companion = await getActiveCompanion(activeCompanionSlug)
@@ -245,6 +268,16 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
 
       log.log(' Streaming TTS connected')
 
+      // Now WebSocket is ready - send any buffered sentences
+      wsReady = true
+      if (pendingSentences.length > 0) {
+        log.log(` Sending ${pendingSentences.length} buffered sentences`)
+        for (const sentence of pendingSentences) {
+          streamingTtsRef.current.sendText(sentence)
+        }
+        pendingSentences = []
+      }
+
       // Emit speaking:start immediately
       bus.emit('avatar', { type: 'speaking:start' })
 
@@ -266,23 +299,6 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
           disconnectLipSync()
         }
         bus.emit('avatar', { type: 'speaking:stop' })
-      })
-
-      // Subscribe to stream events to get text chunks
-      streamUnsubscribe = bus.on('stream', (delta: string) => {
-        if (!streamingTtsRef.current) return
-
-        // Accumulate text and detect sentence boundaries
-        sentenceBufferRef.current += delta
-        const { sentences, remaining } = extractCompleteSentences(sentenceBufferRef.current)
-        sentenceBufferRef.current = remaining
-
-        // Send complete sentences to TTS
-        for (const sentence of sentences) {
-          if (sentence.trim()) {
-            streamingTtsRef.current.sendText(sentence)
-          }
-        }
       })
     }
 
