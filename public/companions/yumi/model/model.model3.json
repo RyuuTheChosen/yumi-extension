@@ -1,0 +1,70 @@
+{
+  "Version": 3,
+  "FileReferences": {
+    "Moc": "model.moc3",
+    "Textures": [
+      "textures/texture_00.png"
+    ],
+    "Physics": "model.physics3.json",
+    "DisplayInfo": "model.cdi3.json",
+    "Expressions": [
+      {
+        "Name": "neutral",
+        "File": "expressions/exp_neutral.exp3.json"
+      },
+      {
+        "Name": "happy",
+        "File": "expressions/exp_happy.exp3.json"
+      },
+      {
+        "Name": "sad",
+        "File": "expressions/exp_sad.exp3.json"
+      },
+      {
+        "Name": "thinking",
+        "File": "expressions/exp_thinking.exp3.json"
+      },
+      {
+        "Name": "surprised",
+        "File": "expressions/exp_surprised.exp3.json"
+      },
+      {
+        "Name": "scared",
+        "File": "expressions/exp_scared.exp3.json"
+      },
+      {
+        "Name": "smiling",
+        "File": "expressions/exp_smiling.exp3.json"
+      },
+      {
+        "Name": "eyes_zetubou",
+        "File": "expressions/eyes_zetubou.exp3.json"
+      },
+      {
+        "Name": "face_aozame",
+        "File": "expressions/face_aozame.exp3.json"
+      },
+      {
+        "Name": "hair_open",
+        "File": "expressions/hair_open.exp3.json"
+      },
+      {
+        "Name": "eye_color",
+        "File": "expressions/eye_color.exp3.json"
+      }
+    ]
+  },
+  "Groups": [
+    {
+      "Target": "Parameter",
+      "Name": "LipSync",
+      "Ids": []
+    },
+    {
+      "Target": "Parameter",
+      "Name": "EyeBlink",
+      "Ids": []
+    }
+  ],
+  "HitAreas": []
+}

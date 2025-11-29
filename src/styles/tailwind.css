@@ -1,0 +1,508 @@
+/* Modern Font Imports - Google Fonts (must be at the top) */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Fredoka:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Comfortaa:wght@400;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* CSS Variables for consistent design */
+:root {
+  color-scheme: light dark;
+  
+  /* Spacing */
+  --spacing-xs: 0.25rem;
+  --spacing-sm: 0.5rem;
+  --spacing-md: 1rem;
+  --spacing-lg: 1.5rem;
+  --spacing-xl: 2rem;
+  --spacing-2xl: 3rem;
+  
+  /* Border radius */
+  --radius-xs: 0.375rem;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.5rem;
+  --radius-2xl: 2rem;
+  --radius-full: 9999px;
+  
+  /* Transitions - Smoother easing */
+  --transition-fast: 150ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --transition-base: 250ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --transition-slow: 400ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --transition-smooth: 600ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  
+  /* Shadows - More refined */
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.03);
+  --shadow-sm: 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 8px -2px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 12px 24px -4px rgba(0, 0, 0, 0.12);
+  --shadow-xl: 0 24px 48px -8px rgba(0, 0, 0, 0.18);
+  --shadow-2xl: 0 32px 64px -12px rgba(0, 0, 0, 0.24);
+  
+  /* Anime-themed colored shadows */
+  --shadow-coral: 0 8px 24px rgba(232, 139, 125, 0.25);
+  --shadow-mint: 0 8px 24px rgba(152, 217, 194, 0.25);
+  --shadow-pastel: 0 8px 24px rgba(232, 139, 125, 0.15), 0 0 40px rgba(152, 217, 194, 0.1);
+  
+  /* Blur effects */
+  --blur-xs: 2px;
+  --blur-sm: 4px;
+  --blur-md: 8px;
+  --blur-lg: 12px;
+  --blur-xl: 16px;
+  --blur-2xl: 24px;
+}
+
+/* Base styles */
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  
+  body {
+    @apply font-sans text-neutral-900 dark:text-neutral-100;
+  }
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+/* Custom Scrollbar Styling - Monochrome Glass */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 100px;
+  margin: 2px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 100px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: all 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.40);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: rgba(255, 255, 255, 0.50);
+  background-clip: padding-box;
+}
+
+/* Firefox scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.25) rgba(255, 255, 255, 0.05);
+}
+
+/* Smooth scroll behavior */
+* {
+  scroll-behavior: smooth;
+}
+
+/* Selection styling - Monochrome */
+::selection {
+  background: rgba(255, 255, 255, 0.30);
+  color: #000000;
+  text-shadow: none;
+}
+
+/* Focus visible improvements - Monochrome */
+*:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.60);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.15);
+  transition: outline-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Better keyboard navigation indicators */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  @apply ring-2 ring-white/40 ring-offset-2 ring-offset-transparent;
+}
+
+/* ========================================
+   GLASS FROSTED MONOCHROME DESIGN SYSTEM
+   ======================================== */
+
+/* Main glass panel - for chat overlay (dark glass for contrast on any page) */
+.glass-panel {
+  background: rgba(20, 20, 20, 0.85);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+/* Dark glass panel - for settings/popup */
+.glass-panel-dark {
+  background: rgba(20, 20, 20, 0.80);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.30);
+}
+
+/* AI message bubble (lighter than panel but still dark for contrast) */
+.glass-bubble-ai {
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* User message bubble (darker) */
+.glass-bubble-user {
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+/* Glass input field */
+.glass-input {
+  background: rgba(255, 255, 255, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.20);
+  color: #ffffff;
+  transition: all 0.2s ease;
+}
+
+.glass-input::placeholder {
+  color: rgba(255, 255, 255, 0.50);
+}
+
+.glass-input:focus {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.40);
+  outline: none;
+}
+
+/* Glass button - primary (white) */
+.glass-btn-primary {
+  background: rgba(255, 255, 255, 0.90);
+  color: #1a1a1a;
+  border: none;
+  transition: all 0.2s ease;
+}
+
+.glass-btn-primary:hover {
+  background: #ffffff;
+}
+
+/* Glass button - secondary (transparent) */
+.glass-btn-secondary {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.20);
+  transition: all 0.2s ease;
+}
+
+.glass-btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.30);
+}
+
+/* Glass button - ghost (icon buttons) */
+.glass-btn-ghost {
+  background: transparent;
+  color: #ffffff;
+  border: none;
+  transition: all 0.2s ease;
+}
+
+.glass-btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.10);
+}
+
+/* Glass toggle */
+.glass-toggle {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 12px;
+  position: relative;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.glass-toggle.on {
+  background: rgba(255, 255, 255, 0.90);
+}
+
+.glass-toggle::after {
+  content: '';
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  background: #666;
+  border-radius: 50%;
+  top: 2px;
+  left: 2px;
+  transition: transform 0.2s ease;
+}
+
+.glass-toggle.on::after {
+  background: #1a1a1a;
+  transform: translateX(20px);
+}
+
+/* Glass card/container */
+.glass-card {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 12px;
+}
+
+/* Legacy glass utilities (for backward compatibility) */
+.glass {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(var(--blur-lg)) saturate(180%);
+  -webkit-backdrop-filter: blur(var(--blur-lg)) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.glass-strong {
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(var(--blur-xl)) saturate(200%);
+  -webkit-backdrop-filter: blur(var(--blur-xl)) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.30);
+}
+
+.glass-subtle {
+  background: rgba(255, 255, 255, 0.10);
+  backdrop-filter: blur(var(--blur-md)) saturate(150%);
+  -webkit-backdrop-filter: blur(var(--blur-md)) saturate(150%);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* Anime-style text effects */
+.text-anime-glow {
+  text-shadow: 
+    0 0 10px currentColor,
+    0 0 20px currentColor,
+    0 0 30px currentColor;
+}
+
+.text-outline {
+  text-shadow: 
+    -2px -2px 0 #000,
+    2px -2px 0 #000,
+    -2px 2px 0 #000,
+    2px 2px 0 #000;
+}
+
+.text-outline-white {
+  text-shadow: 
+    -2px -2px 0 #fff,
+    2px -2px 0 #fff,
+    -2px 2px 0 #fff,
+    2px 2px 0 #fff;
+}
+
+/* Monochrome glass glow effects */
+.glass-glow {
+  box-shadow:
+    0 0 15px rgba(255, 255, 255, 0.1),
+    0 0 30px rgba(255, 255, 255, 0.05);
+}
+
+.glass-glow-subtle {
+  box-shadow:
+    0 0 10px rgba(255, 255, 255, 0.05);
+}
+
+/* Speed lines effect (anime style) */
+.speed-lines {
+  position: relative;
+  overflow: hidden;
+}
+
+.speed-lines::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 200%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.3) 50%,
+    transparent 100%
+  );
+  animation: speed-line 1s ease-in-out infinite;
+}
+
+@keyframes speed-line {
+  0% { left: -100%; }
+  100% { left: 100%; }
+}
+
+/* Modern utility classes */
+@layer utilities {
+  /* Smooth transitions */
+  .transition-smooth {
+    transition: all var(--transition-smooth);
+  }
+  
+  /* Text balance for better typography */
+  .text-balance {
+    text-wrap: balance;
+  }
+  
+  .text-pretty {
+    text-wrap: pretty;
+  }
+  
+  /* Improved interactive states */
+  .interactive {
+    @apply cursor-pointer select-none transition-all duration-200;
+    @apply hover:scale-105 active:scale-95;
+  }
+  
+  .interactive-subtle {
+    @apply cursor-pointer select-none transition-all duration-200;
+    @apply hover:scale-102 active:scale-98;
+  }
+  
+  /* Gradient text utilities */
+  .gradient-text-coral {
+    @apply bg-gradient-to-r from-primary-500 to-primary-600 bg-clip-text text-transparent;
+  }
+  
+  .gradient-text-mint {
+    @apply bg-gradient-to-r from-secondary-500 to-secondary-600 bg-clip-text text-transparent;
+  }
+  
+  .gradient-text-pastel {
+    @apply bg-gradient-to-r from-primary-500 via-secondary-500 to-accent-500 bg-clip-text text-transparent;
+  }
+  
+  /* Button reset */
+  .btn-reset {
+    @apply appearance-none border-none bg-transparent p-0 m-0 cursor-pointer;
+  }
+  
+  /* Focus ring utilities */
+  .focus-ring {
+    @apply focus-visible:ring-4 focus-visible:ring-primary-500/20 focus-visible:ring-offset-2 focus-visible:outline-none;
+  }
+  
+  /* Anime-style card */
+  .card-anime {
+    @apply rounded-2xl p-4 border-3 transition-all duration-300;
+    @apply bg-gradient-to-br from-white to-primary-50/30;
+    @apply border-primary-200 shadow-lg hover:shadow-xl;
+    @apply hover:scale-[1.02] hover:border-primary-300;
+  }
+  
+  .dark .card-anime {
+    @apply from-neutral-900 to-neutral-800 border-neutral-700;
+    @apply hover:border-neutral-600;
+  }
+}
+
+/* Vision abilities animations */
+@keyframes yumiVisionFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes yumiVisionFadeOut {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.95);
+  }
+}
+
+@keyframes yumiVisionPulse {
+  0%, 100% {
+    transform: scale(1);
+    filter: drop-shadow(0 2px 4px rgba(232, 139, 125, 0.3));
+  }
+  50% {
+    transform: scale(1.15);
+    filter: drop-shadow(0 4px 8px rgba(232, 139, 125, 0.5));
+  }
+}
+
+/* Chat overlay animations */
+@keyframes yumiChatSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateY(24px) scale(0.92);
+  }
+  60% {
+    transform: translateY(-4px) scale(1.01);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Custom scrollbar for chat overlay - Glass style */
+.yumi-chat-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.yumi-chat-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  margin: 4px;
+}
+
+.yumi-chat-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.20);
+  border-radius: 10px;
+  transition: all 0.2s ease;
+}
+
+.yumi-chat-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+/* Smooth animations for all transitions */
+@media (prefers-reduced-motion: no-preference) {
+  * {
+    transition-timing-function: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+}
+
+/* Respect user's motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

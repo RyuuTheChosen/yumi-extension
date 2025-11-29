@@ -1,0 +1,23 @@
+{
+  "id": "yumi",
+  "name": "Yumi",
+  "version": "1.0.2",
+  "description": "Your friendly AI companion. Curious, helpful, and always ready to chat. Learns about you and adapts to your style.",
+  "author": "Yumi Labs",
+  "preview": "preview.png",
+  "model": {
+    "entry": "model/model.model3.json",
+    "scale": 0.15,
+    "position": "bottom-right"
+  },
+  "personality": "personality.json",
+  "tags": [
+    "friendly",
+    "curious",
+    "helpful",
+    "playful",
+    "supportive"
+  ],
+  "createdAt": "2025-11-28",
+  "updatedAt": "2025-11-29"
+}

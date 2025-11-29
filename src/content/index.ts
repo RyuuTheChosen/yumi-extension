@@ -1,0 +1,299 @@
+import { extractMainContent } from './extract'
+import { mountOverlay, unmountOverlay, updateOverlayConfig } from './overlayAvatar'
+import { bus } from '../lib/bus'
+import { createLogger } from '../lib/debug'
+
+const log = createLogger('Content')
+import { getActiveCompanion } from '../lib/companions/loader'
+import './visionAbilities' // Initialize vision abilities
+import './contextMenuHandler' // Initialize context menu handling
+
+// Expression state management
+let expressionResetTimer: number | null = null
+
+// Handle avatar events and trigger expressions
+bus.on('avatar', (event) => {
+	const expr = (window as any).__yumiExpression
+	if (!expr) return
+
+	// Clear any pending reset timer
+	if (expressionResetTimer) {
+		clearTimeout(expressionResetTimer)
+		expressionResetTimer = null
+	}
+
+	switch (event.type) {
+		case 'thinking:start':
+			// Thinking expression while AI is generating
+			expr.set('thinking')
+			log.log(' Expression: thinking')
+			break
+		case 'thinking:stop':
+			// Brief happy expression when response completes
+			expr.set('happy')
+			log.log(' Expression: happy')
+			// Reset to neutral after a moment
+			expressionResetTimer = window.setTimeout(() => {
+				expr.reset()
+				log.log(' Expression: reset to neutral')
+			}, 2000)
+			break
+		case 'speaking:start':
+			// Excited/talking expression during TTS
+			expr.set('happy')
+			log.log(' Expression: speaking (happy)')
+			break
+		case 'speaking:stop':
+			// Return to neutral after speaking
+			expressionResetTimer = window.setTimeout(() => {
+				expr.reset()
+				log.log(' Expression: reset after speaking')
+			}, 500)
+			break
+	}
+})
+
+// Listen for avatar events from sidepanel (cross-context communication)
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+	if (message.type === 'AVATAR_EVENT' && message.payload) {
+		log.log(' Received avatar event:', message.payload)
+		bus.emit('avatar', message.payload)
+	}
+
+	// Handle companion change notification from background (for uninstall remount)
+	if (message.type === 'COMPANION_CHANGED' && message.payload?.slug) {
+		log.log(' Received companion change notification:', message.payload.slug)
+		handleCompanionChange(message.payload.slug)
+	}
+})
+
+// Handle companion change notification - remount with new companion
+async function handleCompanionChange(newSlug: string) {
+	try {
+		// Check if overlay is enabled and user is logged in
+		const data = await chrome.storage.local.get('settings-store')
+		let store
+		if (typeof data?.['settings-store'] === 'string') {
+			store = JSON.parse(data['settings-store'])
+		} else {
+			store = data?.['settings-store']
+		}
+
+		const hubAccessToken = store?.state?.hubAccessToken
+		const enableOverlay = !!store?.state?.enableLive2D
+
+		if (!hubAccessToken || !enableOverlay) {
+			log.log(' Not logged in or overlay disabled, skipping companion change')
+			return
+		}
+
+		// Load and mount the new companion
+		const companion = await getActiveCompanion(newSlug)
+		const scale = typeof store?.state?.live2DScale === 'number' ? store.state.live2DScale : 0.5
+		const modelOffsetX = typeof store?.state?.modelOffsetX === 'number' ? store.state.modelOffsetX : 0
+		const modelOffsetY = typeof store?.state?.modelOffsetY === 'number' ? store.state.modelOffsetY : 0
+		const modelScaleMultiplier = typeof store?.state?.modelScaleMultiplier === 'number' ? store.state.modelScaleMultiplier : 1.0
+
+		log.log(' Remounting with new companion:', companion.manifest.id)
+		mountOverlay({ modelUrl: companion.modelUrl, scale, position: 'bottom-right', modelOffsetX, modelOffsetY, modelScaleMultiplier })
+	} catch (e) {
+		log.error(' Failed to handle companion change:', e)
+	}
+}
+
+async function indexPage() {
+	try {
+		const text = extractMainContent(document as Document)
+		chrome.runtime.sendMessage({ type: 'index:add', payload: { url: location.href, text } })
+	} catch (e) {
+		log.warn('Yumi index error', e)
+	}
+}
+
+// Index on idle to avoid jank
+if (document.readyState === 'complete') indexPage()
+else window.addEventListener('load', indexPage)
+
+// Mount overlay based on persisted settings and active companion
+async function maybeMountOverlay() {
+	try {
+		log.log(' Checking overlay settings...')
+		// Pull persisted zustand state (partial)
+		const data = await chrome.storage.local.get('settings-store')
+		log.log(' Storage data:', data)
+
+		// Parse the JSON string stored by zustand-chrome-storage
+		let store
+		if (typeof data?.['settings-store'] === 'string') {
+			store = JSON.parse(data['settings-store'])
+			log.log(' Parsed store:', store)
+		} else {
+			store = data?.['settings-store']
+		}
+
+		// Check Hub authentication - require login to use extension
+		const hubAccessToken = store?.state?.hubAccessToken
+		if (!hubAccessToken) {
+			log.log(' Not authenticated with Hub, skipping overlay')
+			return
+		}
+
+		const enableOverlay = !!store?.state?.enableLive2D
+		log.log(' Enable overlay:', enableOverlay)
+		if (!enableOverlay) {
+			log.log(' Overlay disabled, skipping mount')
+			return
+		}
+
+		// Get active companion slug from settings (defaults to 'yumi')
+		const activeSlug: string = store?.state?.activeCompanionSlug || 'yumi'
+		log.log(' Loading active companion:', activeSlug)
+
+		// Load companion (installed from IndexedDB or bundled fallback)
+		const companion = await getActiveCompanion(activeSlug)
+		log.log(' Loaded companion:', companion.manifest.id)
+
+		// Use companion's model URL (either blob URL from IndexedDB or extension URL for bundled)
+		const resolvedUrl = companion.modelUrl
+		const scale = typeof store?.state?.live2DScale === 'number' ? store.state.live2DScale : 0.5
+		const modelOffsetX = typeof store?.state?.modelOffsetX === 'number' ? store.state.modelOffsetX : 0
+		const modelOffsetY = typeof store?.state?.modelOffsetY === 'number' ? store.state.modelOffsetY : 0
+		const modelScaleMultiplier = typeof store?.state?.modelScaleMultiplier === 'number' ? store.state.modelScaleMultiplier : 1.0
+		log.log(' Mounting overlay with:', { modelUrl: resolvedUrl, scale, position: 'bottom-right', modelOffsetX, modelOffsetY, modelScaleMultiplier })
+		mountOverlay({ modelUrl: resolvedUrl, scale, position: 'bottom-right', modelOffsetX, modelOffsetY, modelScaleMultiplier })
+	} catch (e) {
+		log.error(' Overlay mount failed:', e)
+	}
+}
+
+maybeMountOverlay()
+
+chrome.storage.onChanged.addListener(async (changes, area) => {
+	if (area !== 'local') return
+	if (!changes['settings-store']) return
+	log.log(' Settings changed:', changes['settings-store'])
+
+	// Parse the JSON strings stored by zustand-chrome-storage
+	let oldVal, newVal
+	const rawOldVal = changes['settings-store'].oldValue
+	const rawNewVal = changes['settings-store'].newValue
+
+	if (typeof rawOldVal === 'string') {
+		oldVal = JSON.parse(rawOldVal)
+	} else {
+		oldVal = rawOldVal
+	}
+
+	if (typeof rawNewVal === 'string') {
+		newVal = JSON.parse(rawNewVal)
+	} else {
+		newVal = rawNewVal
+	}
+
+	const oldState = oldVal?.state
+	const newState = newVal?.state
+
+	// Check if Hub auth changed (login/logout)
+	const authChanged = oldState?.hubAccessToken !== newState?.hubAccessToken
+	const wasLoggedIn = !!oldState?.hubAccessToken
+	const isLoggedIn = !!newState?.hubAccessToken
+
+	if (authChanged) {
+		log.log(' Hub auth changed:', { wasLoggedIn, isLoggedIn })
+
+		if (!isLoggedIn) {
+			// User logged out - unmount overlay
+			log.log(' User logged out, unmounting overlay')
+			unmountOverlay()
+			return
+		} else if (isLoggedIn && !wasLoggedIn) {
+			// User logged in - mount overlay if enabled
+			log.log(' User logged in, checking if overlay should mount')
+			if (newState?.enableLive2D) {
+				try {
+					const activeSlug = newState?.activeCompanionSlug || 'yumi'
+					const companion = await getActiveCompanion(activeSlug)
+					const scale = typeof newState?.live2DScale === 'number' ? newState.live2DScale : 0.5
+					const modelOffsetX = typeof newState?.modelOffsetX === 'number' ? newState.modelOffsetX : 0
+					const modelOffsetY = typeof newState?.modelOffsetY === 'number' ? newState.modelOffsetY : 0
+					const modelScaleMultiplier = typeof newState?.modelScaleMultiplier === 'number' ? newState.modelScaleMultiplier : 1.0
+					mountOverlay({ modelUrl: companion.modelUrl, scale, position: 'bottom-right', modelOffsetX, modelOffsetY, modelScaleMultiplier })
+				} catch (e) {
+					log.error(' Failed to load companion on login:', e)
+				}
+			}
+			return
+		}
+	}
+
+	// If not logged in, don't process other changes
+	if (!isLoggedIn) {
+		log.log(' Not logged in, ignoring settings changes')
+		return
+	}
+
+	// Check if avatar-related fields actually changed (avoid remount on AI model changes)
+	const avatarChanged =
+		oldState?.enableLive2D !== newState?.enableLive2D ||
+		oldState?.activeCompanionSlug !== newState?.activeCompanionSlug ||
+		oldState?.live2DScale !== newState?.live2DScale ||
+		oldState?.modelOffsetX !== newState?.modelOffsetX ||
+		oldState?.modelOffsetY !== newState?.modelOffsetY ||
+		oldState?.modelScaleMultiplier !== newState?.modelScaleMultiplier
+
+	if (!avatarChanged) {
+		log.log(' Non-avatar settings changed, skipping overlay remount')
+		return
+	}
+
+	log.log(' Avatar settings changed:', {
+		enableLive2D: `${oldState?.enableLive2D} → ${newState?.enableLive2D}`,
+		activeCompanion: `${oldState?.activeCompanionSlug} → ${newState?.activeCompanionSlug}`,
+		scale: `${oldState?.live2DScale} → ${newState?.live2DScale}`,
+		modelOffsetX: `${oldState?.modelOffsetX} → ${newState?.modelOffsetX}`,
+		modelOffsetY: `${oldState?.modelOffsetY} → ${newState?.modelOffsetY}`,
+		modelScaleMultiplier: `${oldState?.modelScaleMultiplier} → ${newState?.modelScaleMultiplier}`
+	})
+
+	const enableOverlay = !!newState?.enableLive2D
+
+	if (enableOverlay) {
+		const scale = typeof newState?.live2DScale === 'number' ? newState.live2DScale : 0.5
+		const modelOffsetX = typeof newState?.modelOffsetX === 'number' ? newState.modelOffsetX : 0
+		const modelOffsetY = typeof newState?.modelOffsetY === 'number' ? newState.modelOffsetY : 0
+		const modelScaleMultiplier = typeof newState?.modelScaleMultiplier === 'number' ? newState.modelScaleMultiplier : 1.0
+
+		// Check if companion changed (requires full remount with new model)
+		const companionChanged = oldState?.activeCompanionSlug !== newState?.activeCompanionSlug
+
+		if (companionChanged) {
+			log.log(' Active companion changed, loading new companion...')
+			try {
+				const activeSlug = newState?.activeCompanionSlug || 'yumi'
+				const companion = await getActiveCompanion(activeSlug)
+				log.log(' Loaded companion:', companion.manifest.id)
+				mountOverlay({ modelUrl: companion.modelUrl, scale, position: 'bottom-right', modelOffsetX, modelOffsetY, modelScaleMultiplier })
+			} catch (e) {
+				log.error(' Failed to load companion:', e)
+			}
+		} else {
+			// Try lightweight update first (scale/position/model adjustments)
+			const updated = updateOverlayConfig({ scale, position: 'bottom-right', modelOffsetX, modelOffsetY, modelScaleMultiplier })
+
+			if (!updated) {
+				// Fallback: overlay doesn't exist yet, do full mount
+				log.log(' Overlay not mounted, doing initial mount')
+				try {
+					const activeSlug = newState?.activeCompanionSlug || 'yumi'
+					const companion = await getActiveCompanion(activeSlug)
+					mountOverlay({ modelUrl: companion.modelUrl, scale, position: 'bottom-right', modelOffsetX, modelOffsetY, modelScaleMultiplier })
+				} catch (e) {
+					log.error(' Failed to load companion:', e)
+				}
+			}
+		}
+	} else {
+		log.log(' Unmounting overlay')
+		unmountOverlay()
+	}
+})

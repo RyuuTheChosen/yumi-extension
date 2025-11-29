@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LipSync Controller Test</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      color: white;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 2rem;
+      margin-bottom: 1rem;
+      text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+
+    .card {
+      background: rgba(255,255,255,0.1);
+      backdrop-filter: blur(10px);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+
+    button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: rgba(255,255,255,0.9);
+      color: #667eea;
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    button.danger {
+      background: #ef4444;
+      color: white;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+
+    .visualizer {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+
+    canvas {
+      width: 100%;
+      height: 120px;
+      background: rgba(0,0,0,0.3);
+      border-radius: 8px;
+    }
+
+    .telemetry {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+    }
+
+    .metric {
+      background: rgba(0,0,0,0.2);
+      padding: 15px;
+      border-radius: 8px;
+    }
+
+    .metric-label {
+      font-size: 12px;
+      opacity: 0.8;
+      margin-bottom: 5px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .metric-value {
+      font-size: 24px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .gate-indicator {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-left: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+    }
+
+    .gate-open { background: #10b981; }
+    .gate-closed { background: #ef4444; }
+
+    .audio-source {
+      margin-top: 20px;
+    }
+
+    .audio-source label {
+      display: block;
+      margin-bottom: 10px;
+      font-weight: 600;
+    }
+
+    audio {
+      width: 100%;
+      margin-top: 10px;
+    }
+
+    .mouth-visual {
+      position: relative;
+      width: 100%;
+      height: 200px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .mouth {
+      width: 80px;
+      background: rgba(255,255,255,0.9);
+      border-radius: 40px;
+      transition: height 0.016s linear;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    }
+
+    .status {
+      margin-top: 10px;
+      padding: 10px;
+      background: rgba(0,0,0,0.2);
+      border-radius: 6px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎙️ LipSync Controller Test</h1>
+    
+    <div class="card">
+      <h2>Controls</h2>
+      <div class="controls">
+        <button id="initBtn">Initialize AudioContext</button>
+        <button id="startBtn" disabled>Start Lip Sync</button>
+        <button id="stopBtn" disabled>Stop Lip Sync</button>
+        <button id="playBtn" disabled>Play Test Audio</button>
+        <button id="pauseBtn" disabled>Pause Audio</button>
+      </div>
+      <div class="status" id="status">Click "Initialize AudioContext" to begin</div>
+    </div>
+
+    <div class="card">
+      <h2>Mouth Visual</h2>
+      <div class="mouth-visual">
+        <div class="mouth" id="mouth"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Visualizers</h2>
+      <div class="visualizer">
+        <div>
+          <h3 style="margin-bottom: 10px;">Frequency Spectrum</h3>
+          <canvas id="spectrumCanvas"></canvas>
+        </div>
+        <div>
+          <h3 style="margin-bottom: 10px;">Envelope History</h3>
+          <canvas id="envelopeCanvas"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Real-Time Telemetry</h2>
+      <div class="telemetry">
+        <div class="metric">
+          <div class="metric-label">Loudness (dB)</div>
+          <div class="metric-value" id="dbValue">-120.0</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Envelope</div>
+          <div class="metric-value" id="envValue">0.00</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Mouth Open</div>
+          <div class="metric-value" id="mouthValue">0.00</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Gate Status</div>
+          <div class="metric-value">
+            <span id="gateText">Closed</span>
+            <span class="gate-indicator gate-closed" id="gateIndicator"></span>
+          </div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Gate Threshold</div>
+          <div class="metric-value" id="gateThreshold">-55.0 dB</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Speaking Level</div>
+          <div class="metric-value" id="speakingLevel">-25.0 dB</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Audio Source</h2>
+      <div class="audio-source">
+        <label>Test Audio (Sample Speech):</label>
+        <audio id="audioElement" controls crossorigin="anonymous">
+          <source src="https://www2.cs.uic.edu/~i101/SoundFiles/BabyElephantWalk60.wav" type="audio/wav">
+          Your browser does not support audio.
+        </audio>
+        <p style="margin-top: 10px; font-size: 14px; opacity: 0.8;">
+          Note: Using sample audio. In production, connect to TTS output.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    // Import LipSyncController (in real extension, this would be from the built bundle)
+    // For testing, we'll inline a simplified version
+    
+    class LipSyncController {
+      constructor(ctx) {
+        this.ctx = ctx
+        this.mixBus = ctx.createGain()
+        this.mixBus.gain.value = 1.0
+        
+        this.analyser = ctx.createAnalyser()
+        this.analyser.fftSize = 256
+        this.analyser.smoothingTimeConstant = 0.8
+        
+        this.mixBus.connect(this.analyser)
+        this.analyser.connect(ctx.destination)
+        
+        this.data = new Uint8Array(this.analyser.frequencyBinCount)
+        
+        this.gateDb = -55
+        this.openDb = -25
+        this.hysteresis = 4
+        this.maxOpen = 0.85
+        this.attackTime = 0.12
+        this.releaseTime = 0.22
+        
+        this.envelope = 0
+        this.speaking = false
+        this.lastGateState = false
+        this.calibrating = false
+        this.calibrationSamples = []
+        this.voicePresets = new Map()
+        this.currentVoice = 'default'
+        
+        console.log('[LipSync] Controller initialized')
+      }
+      
+      connectSource(source) {
+        source.connect(this.mixBus)
+        console.log('[LipSync] Audio source connected')
+      }
+      
+      start(voiceId) {
+        this.speaking = true
+        this.envelope = 0
+        this.lastGateState = false
+        this.currentVoice = voiceId || 'default'
+        this.startCalibration()
+        console.log(`[LipSync] Started (voice: ${this.currentVoice})`)
+      }
+      
+      stop() {
+        this.speaking = false
+        console.log('[LipSync] Stopped (envelope will decay)')
+      }
+      
+      update(deltaTime) {
+        if (!this.speaking) {
+          if (this.envelope > 0.001) {
+            const decayRate = 1 - Math.exp(-deltaTime / this.releaseTime)
+            this.envelope -= this.envelope * decayRate
+            const eased = 1 - Math.pow(1 - this.envelope, 2)
+            return Math.min(this.maxOpen, eased)
+          }
+          return 0
+        }
+        
+        const currentDb = this.calculateLoudnessDb()
+        
+        if (this.calibrating) {
+          this.calibrationSamples.push(currentDb)
+          if (this.calibrationSamples.length >= 12) {
+            this.finishCalibration()
+          }
+        }
+        
+        const gateOpenThreshold = this.gateDb + this.hysteresis
+        const gateCloseThreshold = this.gateDb
+        
+        let gateOpen
+        if (this.lastGateState) {
+          gateOpen = currentDb >= gateCloseThreshold
+        } else {
+          gateOpen = currentDb >= gateOpenThreshold
+        }
+        
+        if (this.envelope > 0.05) {
+          gateOpen = gateOpen || currentDb >= gateCloseThreshold
+        }
+        
+        this.lastGateState = gateOpen
+        const gatedDb = gateOpen ? currentDb : -120
+        const normalizedLevel = (gatedDb - this.gateDb) / (this.openDb - this.gateDb)
+        const target = Math.max(0, Math.min(1, normalizedLevel))
+        
+        const isAttacking = target > this.envelope
+        const envelopeRate = isAttacking
+          ? 1 - Math.exp(-deltaTime / this.attackTime)
+          : 1 - Math.exp(-deltaTime / this.releaseTime)
+        
+        this.envelope += envelopeRate * (target - this.envelope)
+        const eased = 1 - Math.pow(1 - this.envelope, 2)
+        return Math.min(this.maxOpen, eased)
+      }
+      
+      calculateLoudnessDb() {
+        this.analyser.getByteFrequencyData(this.data)
+        let sum = 0
+        for (let i = 0; i < this.data.length; i++) {
+          const normalized = this.data[i] / 255
+          sum += normalized * normalized
+        }
+        const rms = Math.sqrt(sum / this.data.length)
+        const db = 20 * Math.log10(rms + 1e-6)
+        return db
+      }
+      
+      startCalibration() {
+        this.calibrating = true
+        this.calibrationSamples = []
+        console.log('[LipSync] Starting auto-calibration...')
+      }
+      
+      finishCalibration() {
+        this.calibrating = false
+        const peakDb = Math.max(...this.calibrationSamples)
+        const avgDb = this.calibrationSamples.reduce((a, b) => a + b, 0) / this.calibrationSamples.length
+        
+        console.log(`[LipSync] Calibration complete: peak=${peakDb.toFixed(1)}dB, avg=${avgDb.toFixed(1)}dB`)
+        
+        const targetPeakEnvelope = 0.85
+        const currentPeakEnvelope = (peakDb - this.gateDb) / (this.openDb - this.gateDb)
+        
+        if (currentPeakEnvelope > 0.1) {
+          const adjustment = (targetPeakEnvelope / currentPeakEnvelope) - 1
+          this.openDb += adjustment * (this.openDb - this.gateDb)
+          console.log(`[LipSync] Adjusted openDb to ${this.openDb.toFixed(1)}dB`)
+        }
+      }
+      
+      getTelemetry() {
+        const currentDb = this.calculateLoudnessDb()
+        return {
+          currentDb,
+          envelope: this.envelope,
+          gateOpen: this.lastGateState,
+          speaking: this.speaking,
+          calibrating: this.calibrating,
+          currentVoice: this.currentVoice,
+          gateDb: this.gateDb,
+          openDb: this.openDb
+        }
+      }
+      
+      getFrequencyData() {
+        this.analyser.getByteFrequencyData(this.data)
+        return Array.from(this.data)
+      }
+      
+      destroy() {
+        this.analyser.disconnect()
+        this.mixBus.disconnect()
+        console.log('[LipSync] Controller destroyed')
+      }
+    }
+
+    // UI State
+    let audioContext = null
+    let lipSyncController = null
+    let audioSource = null
+    let animationFrameId = null
+    let lastTime = performance.now()
+    let envelopeHistory = []
+
+    // DOM Elements
+    const initBtn = document.getElementById('initBtn')
+    const startBtn = document.getElementById('startBtn')
+    const stopBtn = document.getElementById('stopBtn')
+    const playBtn = document.getElementById('playBtn')
+    const pauseBtn = document.getElementById('pauseBtn')
+    const audioElement = document.getElementById('audioElement')
+    const status = document.getElementById('status')
+    const mouth = document.getElementById('mouth')
+    const spectrumCanvas = document.getElementById('spectrumCanvas')
+    const envelopeCanvas = document.getElementById('envelopeCanvas')
+    
+    // Telemetry elements
+    const dbValue = document.getElementById('dbValue')
+    const envValue = document.getElementById('envValue')
+    const mouthValue = document.getElementById('mouthValue')
+    const gateText = document.getElementById('gateText')
+    const gateIndicator = document.getElementById('gateIndicator')
+    const gateThreshold = document.getElementById('gateThreshold')
+    const speakingLevel = document.getElementById('speakingLevel')
+
+    // Initialize AudioContext
+    initBtn.addEventListener('click', async () => {
+      try {
+        audioContext = new AudioContext()
+        lipSyncController = new LipSyncController(audioContext)
+        
+        // Connect audio element
+        audioSource = audioContext.createMediaElementSource(audioElement)
+        lipSyncController.connectSource(audioSource)
+        
+        initBtn.disabled = true
+        startBtn.disabled = false
+        playBtn.disabled = false
+        status.textContent = '✅ AudioContext initialized. Ready to test!'
+        
+        // Start animation loop
+        startAnimationLoop()
+        
+        console.log('✅ Setup complete')
+      } catch (err) {
+        status.textContent = `❌ Error: ${err.message}`
+        console.error(err)
+      }
+    })
+
+    // Start lip sync
+    startBtn.addEventListener('click', () => {
+      lipSyncController.start('test-voice')
+      startBtn.disabled = true
+      stopBtn.disabled = false
+      status.textContent = '🎙️ Lip sync active. Play audio to see it work!'
+    })
+
+    // Stop lip sync
+    stopBtn.addEventListener('click', () => {
+      lipSyncController.stop()
+      startBtn.disabled = false
+      stopBtn.disabled = true
+      status.textContent = '⏹️ Lip sync stopped. Envelope decaying...'
+    })
+
+    // Play audio
+    playBtn.addEventListener('click', () => {
+      audioElement.play()
+      playBtn.disabled = true
+      pauseBtn.disabled = false
+      
+      if (!lipSyncController.getTelemetry().speaking) {
+        lipSyncController.start('test-voice')
+        stopBtn.disabled = false
+        startBtn.disabled = true
+      }
+    })
+
+    // Pause audio
+    pauseBtn.addEventListener('click', () => {
+      audioElement.pause()
+      playBtn.disabled = false
+      pauseBtn.disabled = true
+    })
+
+    // Audio ended
+    audioElement.addEventListener('ended', () => {
+      playBtn.disabled = false
+      pauseBtn.disabled = true
+      lipSyncController.stop()
+      startBtn.disabled = false
+      stopBtn.disabled = true
+      status.textContent = '✅ Audio finished'
+    })
+
+    // Animation loop
+    function startAnimationLoop() {
+      function animate() {
+        if (!lipSyncController) return
+        
+        const now = performance.now()
+        const deltaTime = (now - lastTime) / 1000
+        lastTime = now
+        
+        // Update lip sync
+        const mouthOpen = lipSyncController.update(deltaTime)
+        
+        // Update mouth visual (scale height)
+        const mouthHeight = 10 + (mouthOpen * 90) // 10px min, 100px max
+        mouth.style.height = `${mouthHeight}px`
+        
+        // Get telemetry
+        const telem = lipSyncController.getTelemetry()
+        
+        // Update telemetry UI
+        dbValue.textContent = telem.currentDb.toFixed(1)
+        envValue.textContent = telem.envelope.toFixed(2)
+        mouthValue.textContent = mouthOpen.toFixed(2)
+        gateText.textContent = telem.gateOpen ? 'Open' : 'Closed'
+        gateIndicator.className = `gate-indicator ${telem.gateOpen ? 'gate-open' : 'gate-closed'}`
+        gateThreshold.textContent = `${telem.gateDb.toFixed(1)} dB`
+        speakingLevel.textContent = `${telem.openDb.toFixed(1)} dB`
+        
+        // Update spectrum visualizer
+        drawSpectrum()
+        
+        // Update envelope history
+        envelopeHistory.push(mouthOpen)
+        if (envelopeHistory.length > 200) envelopeHistory.shift()
+        drawEnvelopeHistory()
+        
+        animationFrameId = requestAnimationFrame(animate)
+      }
+      
+      animate()
+    }
+
+    // Draw frequency spectrum
+    function drawSpectrum() {
+      const canvas = spectrumCanvas
+      const ctx = canvas.getContext('2d')
+      const width = canvas.width = canvas.offsetWidth
+      const height = canvas.height = canvas.offsetHeight
+      
+      const freqData = lipSyncController.getFrequencyData()
+      const barWidth = width / freqData.length
+      
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'
+      ctx.fillRect(0, 0, width, height)
+      
+      for (let i = 0; i < freqData.length; i++) {
+        const barHeight = (freqData[i] / 255) * height
+        const x = i * barWidth
+        
+        // Gradient color based on frequency
+        const hue = (i / freqData.length) * 120 + 200 // Blue to purple
+        ctx.fillStyle = `hsl(${hue}, 80%, 60%)`
+        ctx.fillRect(x, height - barHeight, barWidth - 1, barHeight)
+      }
+    }
+
+    // Draw envelope history
+    function drawEnvelopeHistory() {
+      const canvas = envelopeCanvas
+      const ctx = canvas.getContext('2d')
+      const width = canvas.width = canvas.offsetWidth
+      const height = canvas.height = canvas.offsetHeight
+      
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'
+      ctx.fillRect(0, 0, width, height)
+      
+      ctx.strokeStyle = '#10b981'
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      
+      for (let i = 0; i < envelopeHistory.length; i++) {
+        const x = (i / envelopeHistory.length) * width
+        const y = height - (envelopeHistory[i] * height)
+        
+        if (i === 0) {
+          ctx.moveTo(x, y)
+        } else {
+          ctx.lineTo(x, y)
+        }
+      }
+      
+      ctx.stroke()
+      
+      // Draw threshold lines
+      ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)'
+      ctx.lineWidth = 1
+      ctx.setLineDash([5, 5])
+      ctx.beginPath()
+      ctx.moveTo(0, height * 0.85)
+      ctx.lineTo(width, height * 0.85)
+      ctx.stroke()
+      ctx.setLineDash([])
+    }
+
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', () => {
+      if (animationFrameId) cancelAnimationFrame(animationFrameId)
+      if (lipSyncController) lipSyncController.destroy()
+      if (audioContext) audioContext.close()
+    })
+  </script>
+</body>
+</html>

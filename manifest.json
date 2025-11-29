@@ -1,0 +1,63 @@
+{
+  "manifest_version": 3,
+  "name": "Yumi — AI Companion",
+  "version": "0.1.0",
+  "permissions": [
+    "storage",
+    "contextMenus",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://api.openai.com/*",
+    "https://api.deepseek.com/*"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Yumi Settings",
+    "default_popup": "popup/index.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "prelude.js",
+        "cubism-sdk/live2dcubismcore.min.js",
+        "content.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "cubism-sdk/*",
+        "companions/*",
+        "vendor/pixi-live2d/*",
+        "style.css",
+        "public/*"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ],
+  "externally_connectable": {
+    "matches": [
+      "https://yumi.ai/*",
+      "https://*.yumi.ai/*",
+      "https://yumi-pals.com/*",
+      "https://*.yumi-pals.com/*",
+      "http://localhost:*/*",
+      "http://127.0.0.1:*/*"
+    ]
+  }
+}
