@@ -294,11 +294,16 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
 
       // Set up audio end callback
       streamingTtsRef.current.onAudioEnd(() => {
-        log.log(' Streaming TTS audio finished')
+        log.log(' Streaming TTS audio finished, closing connection')
         if (disconnectLipSync) {
           disconnectLipSync()
         }
         bus.emit('avatar', { type: 'speaking:stop' })
+        // Now close the WebSocket connection
+        if (streamingTtsRef.current) {
+          streamingTtsRef.current.destroy()
+          streamingTtsRef.current = null
+        }
       })
     }
 
@@ -309,16 +314,18 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
         streamUnsubscribe = null
       }
 
-      // Flush remaining text
+      // Flush remaining text but DON'T close yet - let server send all audio
       if (streamingTtsRef.current && sentenceBufferRef.current.trim()) {
+        log.log(' Flushing remaining text, waiting for audio...')
         streamingTtsRef.current.sendText(sentenceBufferRef.current, true)
         sentenceBufferRef.current = ''
       }
 
-      // Close connection (let audio finish playing)
-      if (streamingTtsRef.current) {
+      // Don't close immediately - the audioEndCallback will handle cleanup
+      // The server will send 'done' when all audio is sent, then audioEndCallback fires
+      // Only close if there was no audio at all (failed connection)
+      if (streamingTtsRef.current && streamingTtsFailedRef.current) {
         streamingTtsRef.current.close()
-        // Don't destroy yet - let audio finish
       }
     }
 
