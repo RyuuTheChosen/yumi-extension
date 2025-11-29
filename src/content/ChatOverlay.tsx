@@ -24,6 +24,7 @@ import {
 import { isVisionQuery } from '../lib/context/visionTrigger'
 import { extractPageContext, buildContextForPrompt } from '../lib/context'
 import { ttsService } from '../lib/tts'
+import { StreamingTTSService, extractCompleteSentences } from '../lib/tts/streamingTts'
 import { bus } from '../lib/bus'
 import { getActiveCompanion } from '../lib/companions/loader'
 
@@ -98,6 +99,11 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
 
   // Extraction timer ref
   const extractionTimerRef = useRef<number | null>(null)
+
+  // Streaming TTS refs
+  const streamingTtsRef = useRef<StreamingTTSService | null>(null)
+  const sentenceBufferRef = useRef<string>('')
+  const streamingTtsFailedRef = useRef<boolean>(false)
   
   // Port-based streaming connection
   const { connected, sendMessage: sendViaPort } = usePortConnection()
@@ -191,6 +197,122 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
     initTTS()
   }, [ttsEnabled, ttsVolume, activeCompanionSlug, hubUrl, hubAccessToken])
 
+  // Streaming TTS: play audio as text streams in (instead of waiting for full response)
+  useEffect(() => {
+    // Only run when TTS is enabled and we have Hub credentials
+    if (!ttsEnabled || !hubUrl || !hubAccessToken) {
+      return
+    }
+
+    // Track if we're currently using streaming TTS this session
+    let streamUnsubscribe: (() => void) | null = null
+    let currentVoiceId = ''
+
+    const startStreamingTTS = async () => {
+      // Reset state
+      sentenceBufferRef.current = ''
+      streamingTtsFailedRef.current = false
+
+      // Get voice from companion
+      try {
+        const companion = await getActiveCompanion(activeCompanionSlug)
+        currentVoiceId = companion.personality.voice?.voiceId || 'MEJe6hPrI48Kt2lFuVe3'
+      } catch {
+        currentVoiceId = 'MEJe6hPrI48Kt2lFuVe3'
+      }
+
+      // Create streaming TTS service
+      streamingTtsRef.current = new StreamingTTSService(hubUrl, hubAccessToken, {
+        enabled: true,
+        voice: currentVoiceId,
+        volume: ttsVolume,
+        speed: 1.0,
+      })
+
+      // Connect to WebSocket
+      const connected = await streamingTtsRef.current.connect()
+      if (!connected) {
+        log.warn(' Streaming TTS connection failed, will fall back to non-streaming')
+        streamingTtsFailedRef.current = true
+        streamingTtsRef.current.destroy()
+        streamingTtsRef.current = null
+        return
+      }
+
+      log.log(' Streaming TTS connected')
+
+      // Emit speaking:start immediately
+      bus.emit('avatar', { type: 'speaking:start' })
+
+      // Connect lip sync to streaming analyser
+      const analyser = streamingTtsRef.current.getAnalyserNode()
+      let disconnectLipSync: (() => void) | null = null
+      if (analyser) {
+        const connectLipSync = (window as { __yumiConnectStreamingAnalyser?: (a: AnalyserNode) => () => void }).__yumiConnectStreamingAnalyser
+        if (connectLipSync) {
+          disconnectLipSync = connectLipSync(analyser)
+          log.log(' Streaming lip sync connected')
+        }
+      }
+
+      // Set up audio end callback
+      streamingTtsRef.current.onAudioEnd(() => {
+        log.log(' Streaming TTS audio finished')
+        if (disconnectLipSync) {
+          disconnectLipSync()
+        }
+        bus.emit('avatar', { type: 'speaking:stop' })
+      })
+
+      // Subscribe to stream events to get text chunks
+      streamUnsubscribe = bus.on('stream', (delta: string) => {
+        if (!streamingTtsRef.current) return
+
+        // Accumulate text and detect sentence boundaries
+        sentenceBufferRef.current += delta
+        const { sentences, remaining } = extractCompleteSentences(sentenceBufferRef.current)
+        sentenceBufferRef.current = remaining
+
+        // Send complete sentences to TTS
+        for (const sentence of sentences) {
+          if (sentence.trim()) {
+            streamingTtsRef.current.sendText(sentence)
+          }
+        }
+      })
+    }
+
+    const stopStreamingTTS = () => {
+      // Unsubscribe from stream events
+      if (streamUnsubscribe) {
+        streamUnsubscribe()
+        streamUnsubscribe = null
+      }
+
+      // Flush remaining text
+      if (streamingTtsRef.current && sentenceBufferRef.current.trim()) {
+        streamingTtsRef.current.sendText(sentenceBufferRef.current, true)
+        sentenceBufferRef.current = ''
+      }
+
+      // Close connection (let audio finish playing)
+      if (streamingTtsRef.current) {
+        streamingTtsRef.current.close()
+        // Don't destroy yet - let audio finish
+      }
+    }
+
+    // Start streaming TTS when chat streaming begins
+    if (status === 'streaming') {
+      startStreamingTTS()
+    }
+
+    // Cleanup when status changes or component unmounts
+    return () => {
+      stopStreamingTTS()
+    }
+  }, [status, ttsEnabled, hubUrl, hubAccessToken, ttsVolume, activeCompanionSlug])
+
   // REMOVED: Auto-expand chat when streaming (now handled by floating bubble)
   // Vision queries show responses in floating bubble, user opens chat manually if needed
 
@@ -245,11 +367,11 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
       // Emit thinking:stop when streaming ends
       bus.emit('avatar', { type: 'thinking:stop' })
 
-      // Trigger TTS for the last assistant message
-      if (ttsEnabled && displayMessages.length > 0) {
+      // Trigger TTS for the last assistant message (fallback if streaming TTS failed)
+      if (ttsEnabled && displayMessages.length > 0 && streamingTtsFailedRef.current) {
         const lastMessage = displayMessages[displayMessages.length - 1]
         if (lastMessage.role === 'assistant' && lastMessage.content) {
-          log.log(' Speaking response via TTS...')
+          log.log(' Streaming TTS failed, falling back to non-streaming TTS...')
 
           // Emit speaking events
           bus.emit('avatar', { type: 'speaking:start' })

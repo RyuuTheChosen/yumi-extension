@@ -44,3 +44,20 @@ export type TTSEvent =
   | { type: 'speaking:start'; text: string }
   | { type: 'speaking:end' }
   | { type: 'speaking:error'; error: string }
+
+// Streaming TTS message types (extension -> Hub WebSocket)
+export type StreamingTTSOutMessage =
+  | { type: 'init'; voiceId: string; modelId?: string; speed?: number }
+  | { type: 'text'; text: string; flush?: boolean }
+  | { type: 'close' }
+
+// Streaming TTS message types (Hub WebSocket -> extension)
+export type StreamingTTSInMessage =
+  | { type: 'ready' }
+  | { type: 'audio'; audio: string } // base64 encoded
+  | { type: 'done' }
+  | { type: 'error'; message: string }
+  | { type: 'alignment'; alignment: unknown }
+
+// Streaming TTS connection state
+export type StreamingTTSState = 'disconnected' | 'connecting' | 'connected' | 'error'
