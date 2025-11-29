@@ -4,6 +4,8 @@
 
 Chrome Extension (MV3) for the Yumi AI Web Companion.
 
+**Links**: [Discord](https://discord.gg/QPmrJS8baz) | [Website](https://yumi-pals.com)
+
 ---
 
 ## Security & Transparency
