@@ -225,7 +225,7 @@ export class SelectionSpotter {
 
 Selected text: "${selectedText}"${context}
 
-Be helpful, conversational, and thorough in your response.`
+Respond in 2-3 sentences. Expand only if the topic is genuinely complex.`
   }
 
   private showBriefIndicator(text: string) {

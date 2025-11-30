@@ -1,7 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "Yumi — AI Companion",
-  "version": "0.1.0",
+  "name": "Yumi - AI Web Pals",
+  "version": "1.0.0",
+  "description": "AI companions that live in your browser. Animated Live2D avatars with memory, vision abilities, and voice - choose your pal and chat anywhere.",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
   "permissions": [
     "storage",
     "contextMenus",
@@ -20,8 +27,14 @@
   },
   "action": {
     "default_title": "Yumi Settings",
-    "default_popup": "popup/index.html"
+    "default_popup": "popup/index.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png"
+    }
   },
+  "homepage_url": "https://yumi-pals.com",
   "content_scripts": [
     {
       "matches": [
@@ -39,6 +52,7 @@
   "web_accessible_resources": [
     {
       "resources": [
+        "icons/*",
         "cubism-sdk/*",
         "companions/*",
         "vendor/pixi-live2d/*",
@@ -55,9 +69,7 @@
       "https://yumi.ai/*",
       "https://*.yumi.ai/*",
       "https://yumi-pals.com/*",
-      "https://*.yumi-pals.com/*",
-      "http://localhost:*/*",
-      "http://127.0.0.1:*/*"
+      "https://*.yumi-pals.com/*"
     ]
   }
 }

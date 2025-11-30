@@ -46,7 +46,7 @@ ${surroundingText ? `- Nearby text: "${surroundingText.slice(0, 200)}"` : ''}
 • PURPOSE: [What this image appears to show or explain]
 • NOTABLE: [Anything interesting, unusual, or important]
 
-Be factual, thorough with text extraction, and brief with descriptions.
+Be factual and concise. Extract text accurately, describe briefly.
 No conversational language - just analysis.`
 }
 
@@ -116,7 +116,7 @@ ${pageTitle ? `## Source: ${pageTitle}` : ''}
 • ANALYSIS: [Your findings based on their instruction]
 • EXTRAS: [Any helpful context, caveats, or related info]
 
-Be analytical and thorough. No conversational language.`
+Be analytical and concise. No conversational language.`
 }
 
 // ============================================================================
@@ -168,7 +168,7 @@ ${analyticalOutput}
 ---
 
 Now share your findings with your friend in your natural Yumi voice!
-Be helpful, warm, and conversational. Keep it concise (2-4 sentences unless they need more detail).
+Be helpful, warm, and conversational. Keep it to 2-3 sentences. Only expand for genuinely complex topics.
 Don't just repeat the bullet points - transform them into a friendly explanation.`
 }
 
@@ -197,10 +197,10 @@ export function buildSingleStageVisionPrompt(
 You're helping analyze ${hasImage ? 'an image' : 'selected text'} from: ${context.pageTitle || 'a webpage'}
 
 ## How to Respond
-1. First, analyze thoroughly (extract text, identify key elements)
+1. First, analyze (extract text, identify key elements)
 2. Then, share your findings in your natural Yumi voice
-3. Be warm, helpful, and conversational
-4. Keep it concise but complete
+3. Be warm and conversational
+4. Keep it to 2-3 sentences (expand only for complex topics)
 
 ${hasImage ? `## For Images
 - Extract ALL visible text (OCR is important!)
@@ -226,13 +226,13 @@ export const VISION_API_CONFIG = {
   },
   stage2: {
     temperature: 0.8,      // Higher = more personality, creativity
-    max_tokens: 400,       // Concise responses
+    max_tokens: 300,       // Concise responses
     presence_penalty: 0.4, // Encourage variety
     frequency_penalty: 0.3,// Reduce repetition
   },
   singleStage: {
     temperature: 0.7,
-    max_tokens: 500,
+    max_tokens: 350,
     presence_penalty: 0.3,
     frequency_penalty: 0.2,
   },
