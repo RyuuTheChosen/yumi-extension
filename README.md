@@ -1,8 +1,8 @@
-# Yumi Chrome Extension
+# Yumi - AI Web Pals Extension
 
-> **Status**: Deployed - requires activation via Discord invite code
+> **Status**: Chrome Web Store Pending Review | Version 1.0.0
 
-Chrome Extension (MV3) for the Yumi AI Web Companion.
+Chrome Extension (MV3) - AI companions that live in your browser with memory, vision, and voice.
 
 **Links**: [Discord](https://discord.gg/QPmrJS8baz) | [Website](https://yumi-pals.com)
 
@@ -113,7 +113,7 @@ src/
 ### TTS (Text-to-Speech)
 - ElevenLabs WebSocket streaming (~300ms latency)
 - Integrated lip sync with avatar
-- User provides own API key (encrypted storage)
+- Voice from companion personality (shared Hub key)
 
 ### Companion System
 - Install companions from marketplace
