@@ -1,5 +1,7 @@
 # Yumi - AI Web Pals Extension
 
+> **Contract Address**: `HeXyoZWLY4aasdqt8ndYJx6iMGQoqPyHKZpHMPZhpump`
+
 > **Status**: Chrome Web Store Pending Review | Version 1.0.0
 
 Chrome Extension (MV3) - AI companions that live in your browser with memory, vision, and voice.
