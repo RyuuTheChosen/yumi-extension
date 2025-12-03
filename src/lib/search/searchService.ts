@@ -1,10 +1,3 @@
-/**
- * Yumi Web Search Service
- *
- * Handles web search requests via the Hub API.
- * Includes in-memory caching for repeated queries.
- */
-
 import type {
   SearchRequest,
   SearchResponse,
@@ -13,19 +6,12 @@ import type {
 } from './types'
 import { SEARCH_CONFIG } from './types'
 
-// In-memory search cache
 const searchCache = new Map<string, CachedSearch>()
 
-/**
- * Normalize query for cache key (lowercase, trimmed).
- */
 function getCacheKey(query: string): string {
   return query.toLowerCase().trim()
 }
 
-/**
- * Clean up expired cache entries.
- */
 function cleanExpiredCache(): void {
   const now = Date.now()
   for (const [key, cached] of searchCache.entries()) {
@@ -34,7 +20,6 @@ function cleanExpiredCache(): void {
     }
   }
 
-  // If still over limit, remove oldest entries
   if (searchCache.size > SEARCH_CONFIG.maxCacheSize) {
     const entries = Array.from(searchCache.entries())
       .sort((a, b) => a[1].cachedAt - b[1].cachedAt)
@@ -46,9 +31,6 @@ function cleanExpiredCache(): void {
   }
 }
 
-/**
- * Get cached search result if available and not expired.
- */
 function getCachedSearch(query: string): SearchResponse | null {
   const key = getCacheKey(query)
   const cached = searchCache.get(key)
@@ -62,9 +44,6 @@ function getCachedSearch(query: string): SearchResponse | null {
   return cached.response
 }
 
-/**
- * Cache a search response.
- */
 function cacheSearch(query: string, response: SearchResponse): void {
   cleanExpiredCache()
 
@@ -78,26 +57,20 @@ function cacheSearch(query: string, response: SearchResponse): void {
   })
 }
 
-/**
- * Perform a web search via the Hub API.
- * Returns cached result if available.
- */
 export async function performSearch(
   request: SearchRequest
 ): Promise<SearchResponse> {
   const { query, maxResults = SEARCH_CONFIG.defaultMaxResults, searchDepth = 'basic' } = request
 
-  // Check cache first
   const cached = getCachedSearch(query)
   if (cached) {
     return cached
   }
 
-  // Send message to background worker to perform the search
   return new Promise((resolve, reject) => {
     const timeoutId = setTimeout(() => {
       reject(new Error('Search request timed out'))
-    }, SEARCH_CONFIG.timeoutMs + 1000) // Extra buffer for message passing
+    }, SEARCH_CONFIG.timeoutMs + 1000)
 
     chrome.runtime.sendMessage(
       {
@@ -123,7 +96,6 @@ export async function performSearch(
           responseTimeMs: response.responseTimeMs,
         }
 
-        // Cache the successful response
         cacheSearch(query, searchResponse)
 
         resolve(searchResponse)
@@ -132,9 +104,6 @@ export async function performSearch(
   })
 }
 
-/**
- * Format search results for inclusion in system prompt.
- */
 export function formatSearchResultsForPrompt(results: SearchResult[]): string {
   if (!results || results.length === 0) {
     return 'Web search returned no results.'
@@ -163,16 +132,10 @@ Guidelines:
 - Acknowledge when information might be outdated`
 }
 
-/**
- * Clear the search cache.
- */
 export function clearSearchCache(): void {
   searchCache.clear()
 }
 
-/**
- * Get current cache size.
- */
 export function getSearchCacheSize(): number {
   cleanExpiredCache()
   return searchCache.size
