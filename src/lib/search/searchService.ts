@@ -62,21 +62,16 @@ export async function performSearch(
 ): Promise<SearchResponse> {
   const { query, maxResults = SEARCH_CONFIG.defaultMaxResults, searchDepth = 'basic' } = request
 
-  console.log('[Search] Starting search for:', query)
-
   const cached = getCachedSearch(query)
   if (cached) {
-    console.log('[Search] Returning cached result')
     return cached
   }
 
   return new Promise((resolve, reject) => {
     const timeoutId = setTimeout(() => {
-      console.error('[Search] Request timed out after', SEARCH_CONFIG.timeoutMs + 1000, 'ms')
       reject(new Error('Search request timed out'))
     }, SEARCH_CONFIG.timeoutMs + 1000)
 
-    console.log('[Search] Sending SEARCH_REQUEST to background')
     chrome.runtime.sendMessage(
       {
         type: 'SEARCH_REQUEST',
@@ -84,16 +79,13 @@ export async function performSearch(
       },
       (response) => {
         clearTimeout(timeoutId)
-        console.log('[Search] Got response from background:', response)
 
         if (chrome.runtime.lastError) {
-          console.error('[Search] Runtime error:', chrome.runtime.lastError.message)
           reject(new Error(chrome.runtime.lastError.message))
           return
         }
 
         if (!response?.success) {
-          console.error('[Search] Search failed:', response?.error)
           reject(new Error(response?.error || 'Search failed'))
           return
         }
@@ -104,9 +96,7 @@ export async function performSearch(
           responseTimeMs: response.responseTimeMs,
         }
 
-        console.log('[Search] Search complete:', searchResponse.results.length, 'results')
         cacheSearch(query, searchResponse)
-
         resolve(searchResponse)
       }
     )

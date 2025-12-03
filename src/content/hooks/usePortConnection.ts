@@ -238,6 +238,7 @@ export function usePortConnection(options: UsePortConnectionOptions = {}) {
         pageContext: context?.pageContext || undefined,  // Extracted page content
         pageType: context?.pageType || undefined,  // Detected page type
         screenshot: context?.screenshot || undefined,  // Vision query screenshot
+        searchContext: context?.searchContext || undefined,  // Web search results
       }
     }
     
