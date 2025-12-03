@@ -77,6 +77,7 @@ src/
 ├── lib/
 │   ├── companions/           # Companion install/load system
 │   ├── memory/               # Memory extraction and retrieval
+│   ├── search/               # Web search via SearXNG
 │   ├── tts/                  # ElevenLabs TTS integration
 │   ├── stores/               # Zustand stores (settings, chat, personality)
 │   ├── bus.ts                # Event bus for streaming/avatar events
@@ -101,10 +102,24 @@ src/
 - Eye tracking and idle animations
 
 ### Memory System
-- AI-powered extraction from conversations (5 min interval)
-- TF-IDF weighted retrieval
-- Jaccard similarity deduplication
-- Decay-based importance scoring
+- 7 memory types: identity, preference, skill, project, person, event, opinion
+- AI-powered extraction from conversations (30s idle trigger, 5 min interval)
+- TF-IDF weighted retrieval with keyword indexing
+- Jaccard similarity deduplication (60% threshold)
+- Decay-based importance scoring (identity never decays)
+- Shared across all sites via background script IndexedDB
+- Memory Browser in popup for viewing/managing memories
+
+### Proactive Memory
+- Yumi initiates conversations based on memories
+- Welcome back greetings after absence (1+ days)
+- Follow-up questions for events/projects with dates
+- Context matching (page keywords → relevant memories)
+- Random recall with importance-weighted selection
+- Floating bubble display when chat is closed
+- TTS support for spoken proactive messages
+- Activity history tab in Memory Browser
+- Configurable: cooldown, session limits, feature toggles
 
 ### Page Context
 - Extracts current page content before each message
@@ -123,13 +138,23 @@ src/
 - IndexedDB storage for installed companions
 - SHA256 checksum verification
 
+### Web Search
+- Real-time web search via SearXNG meta-search engine
+- Auto-detects search intent ("what's the latest...", "current price of...")
+- Results formatted and injected into AI context
+- 5-minute cache with 100 entry limit
+
 ## Storage
 
-| Storage | Data |
-|---------|------|
-| Chrome Storage | Settings, auth tokens, personality |
-| IndexedDB | Messages, memories, installed companions |
-| Session Storage | Active scope, cleared flags |
+| Storage | Data | Context |
+|---------|------|---------|
+| Chrome Storage | Settings, auth tokens, personality | Extension-wide |
+| IndexedDB `yumi-chat` | Messages, threads | Content script (per-origin) |
+| IndexedDB `yumi-memory` | Memories | Background script (shared) |
+| IndexedDB `yumi-companions` | Installed companions | Extension-wide |
+| Session Storage | Active scope, cleared flags | Per-tab |
+
+**Note**: Memories are stored in the background script's IndexedDB context and accessed via message passing (`MEMORY_GET_ALL`, `MEMORY_ADD`, etc.) to ensure they're shared across all sites.
 
 ## Messaging
 

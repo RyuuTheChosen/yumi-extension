@@ -43,6 +43,14 @@ interface SettingsState {
   ttsSpeed: number   // 0.5-2.0 playback speed
   // STT (Speech-to-Text) settings - via Hub
   sttEnabled: boolean
+  // Proactive Memory Settings
+  proactiveEnabled: boolean
+  proactiveFollowUp: boolean
+  proactiveContext: boolean
+  proactiveRandom: boolean
+  proactiveWelcomeBack: boolean
+  proactiveCooldownMins: number
+  proactiveMaxPerSession: number
   setRelayUrl: (url: string) => void
   setModel: (m: string) => void
   // Hub actions
@@ -66,6 +74,14 @@ interface SettingsState {
   setTTSSpeed: (speed: number) => void
   // STT setters
   setSTTEnabled: (enabled: boolean) => void
+  // Proactive setters
+  setProactiveEnabled: (enabled: boolean) => void
+  setProactiveFollowUp: (enabled: boolean) => void
+  setProactiveContext: (enabled: boolean) => void
+  setProactiveRandom: (enabled: boolean) => void
+  setProactiveWelcomeBack: (enabled: boolean) => void
+  setProactiveCooldownMins: (mins: number) => void
+  setProactiveMaxPerSession: (max: number) => void
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -92,6 +108,14 @@ export const useSettingsStore = create<SettingsState>()(
       ttsSpeed: 1.0,  // Normal speed by default
       // STT defaults (ElevenLabs via Hub)
       sttEnabled: false, // Opt-in, requires microphone permission
+      // Proactive Memory defaults
+      proactiveEnabled: true,
+      proactiveFollowUp: true,
+      proactiveContext: true,
+      proactiveRandom: true,
+      proactiveWelcomeBack: true,
+      proactiveCooldownMins: 10,
+      proactiveMaxPerSession: 10,
       setRelayUrl: (url) => set({ relayUrl: url }),
       setModel: (m) => set({ model: m }),
       setEnableLive2D: (enabled) => set({ enableLive2D: enabled }),
@@ -158,6 +182,14 @@ export const useSettingsStore = create<SettingsState>()(
       setTTSSpeed: (speed) => set({ ttsSpeed: Math.max(0.5, Math.min(2.0, speed)) }),
       // STT setters
       setSTTEnabled: (enabled) => set({ sttEnabled: enabled }),
+      // Proactive setters
+      setProactiveEnabled: (enabled) => set({ proactiveEnabled: enabled }),
+      setProactiveFollowUp: (enabled) => set({ proactiveFollowUp: enabled }),
+      setProactiveContext: (enabled) => set({ proactiveContext: enabled }),
+      setProactiveRandom: (enabled) => set({ proactiveRandom: enabled }),
+      setProactiveWelcomeBack: (enabled) => set({ proactiveWelcomeBack: enabled }),
+      setProactiveCooldownMins: (mins) => set({ proactiveCooldownMins: Math.max(5, Math.min(60, mins)) }),
+      setProactiveMaxPerSession: (max) => set({ proactiveMaxPerSession: Math.max(1, Math.min(20, max)) }),
     }),
     {
       name: 'settings-store',
@@ -184,9 +216,17 @@ export const useSettingsStore = create<SettingsState>()(
         ttsSpeed: s.ttsSpeed,
         // STT fields
         sttEnabled: s.sttEnabled,
+        // Proactive fields
+        proactiveEnabled: s.proactiveEnabled,
+        proactiveFollowUp: s.proactiveFollowUp,
+        proactiveContext: s.proactiveContext,
+        proactiveRandom: s.proactiveRandom,
+        proactiveWelcomeBack: s.proactiveWelcomeBack,
+        proactiveCooldownMins: s.proactiveCooldownMins,
+        proactiveMaxPerSession: s.proactiveMaxPerSession,
       }),
       skipHydration: true, // Manual rehydration for content script timing control
-      version: 19, // Add STT (Speech-to-Text) setting
+      version: 20, // Add Proactive Memory settings
       migrate: (persisted: any, fromVersion: number) => {
         // Handle older shapes by adding new defaults
         const base = persisted || {}
@@ -304,6 +344,16 @@ export const useSettingsStore = create<SettingsState>()(
         if (fromVersion < 19) {
           // Add STT (Speech-to-Text) setting
           if (typeof state.sttEnabled !== 'boolean') state.sttEnabled = false
+        }
+        if (fromVersion < 20) {
+          // Add Proactive Memory settings
+          if (typeof state.proactiveEnabled !== 'boolean') state.proactiveEnabled = true
+          if (typeof state.proactiveFollowUp !== 'boolean') state.proactiveFollowUp = true
+          if (typeof state.proactiveContext !== 'boolean') state.proactiveContext = true
+          if (typeof state.proactiveRandom !== 'boolean') state.proactiveRandom = true
+          if (typeof state.proactiveWelcomeBack !== 'boolean') state.proactiveWelcomeBack = true
+          if (typeof state.proactiveCooldownMins !== 'number') state.proactiveCooldownMins = 10
+          if (typeof state.proactiveMaxPerSession !== 'number') state.proactiveMaxPerSession = 10
         }
         return { ...base, state }
       },

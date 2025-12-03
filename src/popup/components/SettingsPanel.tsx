@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react'
-import { Check, AlertCircle, Bot, Eye, Cloud, Download, ExternalLink, Loader2, Volume2 } from 'lucide-react'
+import { Check, AlertCircle, Bot, Eye, Cloud, Download, ExternalLink, Loader2, Volume2, Brain } from 'lucide-react'
 import { useSettingsStore } from '../../lib/stores/settings.store'
 import { cn } from '../../lib/design/utils'
-import { usePersonalityStore } from '../../lib/stores/personality.store'
 import { VisionSettings } from './VisionSettings'
+import { MemoryBrowser } from './MemoryBrowser'
 import { getInstalledCompanions, getCompanionFileUrl, type StoredCompanion } from '../../lib/companions/db'
 
 // Companion option for selector
@@ -14,7 +14,7 @@ interface CompanionOption {
   previewUrl?: string   // Preview image URL
 }
 
-type TabType = 'hub' | 'avatar' | 'vision' | 'voice'
+type TabType = 'hub' | 'avatar' | 'vision' | 'voice' | 'memory'
 
 export function SettingsPanel() {
   const [activeTab, setActiveTab] = useState<TabType>('hub')
@@ -49,6 +49,22 @@ export function SettingsPanel() {
   const sttEnabled = useSettingsStore(s => s.sttEnabled)
   const setSTTEnabled = useSettingsStore(s => s.setSTTEnabled)
 
+  // Proactive Memory settings
+  const proactiveEnabled = useSettingsStore(s => s.proactiveEnabled)
+  const setProactiveEnabled = useSettingsStore(s => s.setProactiveEnabled)
+  const proactiveFollowUp = useSettingsStore(s => s.proactiveFollowUp)
+  const setProactiveFollowUp = useSettingsStore(s => s.setProactiveFollowUp)
+  const proactiveContext = useSettingsStore(s => s.proactiveContext)
+  const setProactiveContext = useSettingsStore(s => s.setProactiveContext)
+  const proactiveRandom = useSettingsStore(s => s.proactiveRandom)
+  const setProactiveRandom = useSettingsStore(s => s.setProactiveRandom)
+  const proactiveWelcomeBack = useSettingsStore(s => s.proactiveWelcomeBack)
+  const setProactiveWelcomeBack = useSettingsStore(s => s.setProactiveWelcomeBack)
+  const proactiveCooldownMins = useSettingsStore(s => s.proactiveCooldownMins)
+  const setProactiveCooldownMins = useSettingsStore(s => s.setProactiveCooldownMins)
+  const proactiveMaxPerSession = useSettingsStore(s => s.proactiveMaxPerSession)
+  const setProactiveMaxPerSession = useSettingsStore(s => s.setProactiveMaxPerSession)
+
   // Hub settings (required for API access)
   const hubUrl = useSettingsStore((s) => s.hubUrl)
   const setHubUrl = useSettingsStore((s) => s.setHubUrl)
@@ -57,9 +73,6 @@ export function SettingsPanel() {
   const setHubAuth = useSettingsStore((s) => s.setHubAuth)
   const clearHubAuth = useSettingsStore((s) => s.clearHubAuth)
 
-  const exportAll = usePersonalityStore((s) => s.exportAll)
-  const importFromJSON = usePersonalityStore((s) => s.importFromJSON)
-  const [importMsg, setImportMsg] = useState<string | null>(null)
 
   // Hub quota
   const hubQuota = useSettingsStore((s) => s.hubQuota)
@@ -253,11 +266,11 @@ export function SettingsPanel() {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b border-white/10">
+      <div className="flex overflow-x-auto border-b border-white/10 scrollbar-hide">
         <button
           onClick={() => setActiveTab('hub')}
           className={cn(
-            "flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors relative",
+            "flex items-center gap-1 px-3 py-2.5 text-xs font-medium transition-colors relative flex-shrink-0",
             "focus:outline-none",
             activeTab === 'hub'
               ? "text-white"
@@ -276,7 +289,7 @@ export function SettingsPanel() {
         <button
           onClick={() => setActiveTab('avatar')}
           className={cn(
-            "flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors relative",
+            "flex items-center gap-1 px-3 py-2.5 text-xs font-medium transition-colors relative flex-shrink-0",
             "focus:outline-none",
             activeTab === 'avatar'
               ? "text-white"
@@ -295,7 +308,7 @@ export function SettingsPanel() {
         <button
           onClick={() => setActiveTab('vision')}
           className={cn(
-            "flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors relative",
+            "flex items-center gap-1 px-3 py-2.5 text-xs font-medium transition-colors relative flex-shrink-0",
             "focus:outline-none",
             activeTab === 'vision'
               ? "text-white"
@@ -314,7 +327,7 @@ export function SettingsPanel() {
         <button
           onClick={() => setActiveTab('voice')}
           className={cn(
-            "flex items-center gap-1.5 px-4 py-2.5 text-xs font-medium transition-colors relative",
+            "flex items-center gap-1 px-3 py-2.5 text-xs font-medium transition-colors relative flex-shrink-0",
             "focus:outline-none",
             activeTab === 'voice'
               ? "text-white"
@@ -327,6 +340,25 @@ export function SettingsPanel() {
           <Volume2 size={14} />
           Voice
           {activeTab === 'voice' && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white" />
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('memory')}
+          className={cn(
+            "flex items-center gap-1 px-3 py-2.5 text-xs font-medium transition-colors relative flex-shrink-0",
+            "focus:outline-none",
+            activeTab === 'memory'
+              ? "text-white"
+              : "text-white/50 hover:text-white/80"
+          )}
+          role="tab"
+          aria-selected={activeTab === 'memory'}
+          aria-controls="memory-panel"
+        >
+          <Brain size={14} />
+          Memory
+          {activeTab === 'memory' && (
             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white" />
           )}
         </button>
@@ -765,6 +797,144 @@ export function SettingsPanel() {
           </>
         )}
 
+        {activeTab === 'memory' && (
+          <>
+            {/* Proactive Companion Section */}
+            <div className="flex flex-col gap-3 p-3 rounded-lg border border-white/15 bg-white/5">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <label className="text-sm font-medium text-white">
+                    Proactive Companion
+                  </label>
+                  <p className="text-xs text-white/50 mt-0.5">
+                    Let Yumi initiate conversations
+                  </p>
+                </div>
+                <button
+                  onClick={() => setProactiveEnabled(!proactiveEnabled)}
+                  className={cn(
+                    "px-4 py-2 text-xs font-bold rounded-lg transition-all duration-200",
+                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40",
+                    proactiveEnabled
+                      ? "bg-white/90 text-mono-900 hover:bg-white shadow-md"
+                      : "bg-white/15 text-white/70 hover:bg-white/25"
+                  )}
+                >
+                  {proactiveEnabled ? 'Enabled' : 'Disabled'}
+                </button>
+              </div>
+
+              {proactiveEnabled && (
+                <div className="space-y-3 pt-3 border-t border-white/10">
+                  {/* Feature Toggles */}
+                  <div className="space-y-2 pl-2 border-l-2 border-white/10">
+                    <label
+                      className="flex items-center gap-2 cursor-pointer group"
+                      onClick={() => setProactiveWelcomeBack(!proactiveWelcomeBack)}
+                    >
+                      <div className={cn(
+                        "w-4 h-4 rounded border flex items-center justify-center transition-colors",
+                        proactiveWelcomeBack
+                          ? "bg-white/90 border-white/90"
+                          : "border-white/30 group-hover:border-white/50"
+                      )}>
+                        {proactiveWelcomeBack && <Check size={12} className="text-mono-900" />}
+                      </div>
+                      <span className="text-xs text-white/70">Welcome back greetings</span>
+                    </label>
+
+                    <label
+                      className="flex items-center gap-2 cursor-pointer group"
+                      onClick={() => setProactiveFollowUp(!proactiveFollowUp)}
+                    >
+                      <div className={cn(
+                        "w-4 h-4 rounded border flex items-center justify-center transition-colors",
+                        proactiveFollowUp
+                          ? "bg-white/90 border-white/90"
+                          : "border-white/30 group-hover:border-white/50"
+                      )}>
+                        {proactiveFollowUp && <Check size={12} className="text-mono-900" />}
+                      </div>
+                      <span className="text-xs text-white/70">Follow-up questions</span>
+                    </label>
+
+                    <label
+                      className="flex items-center gap-2 cursor-pointer group"
+                      onClick={() => setProactiveContext(!proactiveContext)}
+                    >
+                      <div className={cn(
+                        "w-4 h-4 rounded border flex items-center justify-center transition-colors",
+                        proactiveContext
+                          ? "bg-white/90 border-white/90"
+                          : "border-white/30 group-hover:border-white/50"
+                      )}>
+                        {proactiveContext && <Check size={12} className="text-mono-900" />}
+                      </div>
+                      <span className="text-xs text-white/70">Context connections</span>
+                    </label>
+
+                    <label
+                      className="flex items-center gap-2 cursor-pointer group"
+                      onClick={() => setProactiveRandom(!proactiveRandom)}
+                    >
+                      <div className={cn(
+                        "w-4 h-4 rounded border flex items-center justify-center transition-colors",
+                        proactiveRandom
+                          ? "bg-white/90 border-white/90"
+                          : "border-white/30 group-hover:border-white/50"
+                      )}>
+                        {proactiveRandom && <Check size={12} className="text-mono-900" />}
+                      </div>
+                      <span className="text-xs text-white/70">Random recalls</span>
+                    </label>
+                  </div>
+
+                  {/* Cooldown Slider */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium text-white/70">Cooldown</label>
+                      <span className="text-xs font-mono text-white/50">{proactiveCooldownMins} min</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={5}
+                      max={60}
+                      step={5}
+                      value={proactiveCooldownMins}
+                      onChange={(e) => setProactiveCooldownMins(parseInt(e.target.value))}
+                      className="w-full accent-white"
+                    />
+                  </div>
+
+                  {/* Session Limit Slider */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-medium text-white/70">Max per session</label>
+                      <span className="text-xs font-mono text-white/50">{proactiveMaxPerSession}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min={1}
+                      max={20}
+                      step={1}
+                      value={proactiveMaxPerSession}
+                      onChange={(e) => setProactiveMaxPerSession(parseInt(e.target.value))}
+                      className="w-full accent-white"
+                    />
+                  </div>
+
+                  <p className="text-xs text-white/40 pt-1">
+                    Yumi will use her memories to ask follow-ups, make connections, and naturally bring up old topics.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Memory Browser */}
+            <MemoryBrowser />
+          </>
+        )}
+
         {/* Hub Settings Tab */}
         {activeTab === 'hub' && (
           <>
@@ -903,63 +1073,6 @@ export function SettingsPanel() {
               </p>
             </div>
 
-            {/* Personalities: Export / Import */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-white/70">
-                Personalities
-              </label>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    const data = exportAll()
-                    const blob = new Blob([data], { type: 'application/json' })
-                    const url = URL.createObjectURL(blob)
-                    const a = document.createElement('a')
-                    a.href = url
-                    a.download = `yumi-personalities-${new Date().toISOString().slice(0, 10)}.json`
-                    a.click()
-                    URL.revokeObjectURL(url)
-                  }}
-                  className={cn(
-                    'px-3 py-1.5 text-xs rounded-lg transition-colors text-white/70',
-                    'border border-white/20 hover:bg-white/10'
-                  )}
-                >
-                  Export
-                </button>
-                <label
-                  className={cn(
-                    'px-3 py-1.5 text-xs rounded-lg transition-colors cursor-pointer text-white/70',
-                    'border border-white/20 hover:bg-white/10'
-                  )}
-                >
-                  Import
-                  <input
-                    type="file"
-                    accept="application/json"
-                    className="hidden"
-                    onChange={(e) => {
-                      const f = e.target.files?.[0]
-                      if (!f) return
-                      const reader = new FileReader()
-                      reader.onload = () => {
-                        try {
-                          const text = String(reader.result)
-                          const res = importFromJSON(text)
-                          setImportMsg(`Imported ${res.imported} of ${res.total}`)
-                        } catch (err: any) {
-                          setImportMsg(err?.message || 'Import failed')
-                        }
-                      }
-                      reader.readAsText(f)
-                    }}
-                  />
-                </label>
-              </div>
-              {importMsg && (
-                <p className="text-xs text-white/50">{importMsg}</p>
-              )}
-            </div>
           </>
         )}
       </div>

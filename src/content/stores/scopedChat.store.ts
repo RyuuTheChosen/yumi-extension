@@ -56,7 +56,8 @@ interface ScopedChatState {
   setError: (error: string | null) => void
   setStatus: (status: ChatStatus) => void
   togglePrivateMode: () => void
-  
+  addProactiveMessage: (content: string) => Promise<void>
+
   // Getters
   getCurrentMessages: () => Message[]
   getDisplayMessages: () => Message[]
@@ -310,7 +311,51 @@ export const useScopedChatStore = create<ScopedChatState>((set, get) => ({
   togglePrivateMode: () => {
     set({ privateMode: !get().privateMode })
   },
-  
+
+  /**
+   * Add a proactive message from Yumi (no user message, just assistant)
+   */
+  addProactiveMessage: async (content: string) => {
+    const { currentScope, privateMode } = get()
+
+    if (!content.trim()) {
+      console.warn('[ScopedChat] Cannot add empty proactive message')
+      return
+    }
+
+    const now = Date.now()
+
+    const assistantMessage: Message = {
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: content.trim(),
+      ts: now,
+      scopeId: currentScope.id,
+      status: 'final',
+      meta: { proactive: true }
+    }
+
+    // Get current messages and add proactive message
+    const currentMessages = get().threads.get(currentScope.id) || []
+    const updatedMessages = [...currentMessages, assistantMessage]
+
+    const newThreads = new Map(get().threads)
+    newThreads.set(currentScope.id, updatedMessages)
+
+    set({ threads: newThreads })
+
+    // Persist to IndexedDB (unless private mode)
+    if (!privateMode) {
+      try {
+        await addMessage(assistantMessage)
+      } catch (err) {
+        console.error('[ScopedChat] Failed to persist proactive message:', err)
+      }
+    }
+
+    console.log('[ScopedChat] Added proactive message')
+  },
+
   /**
    * Get current thread messages
    */

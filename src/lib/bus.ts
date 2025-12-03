@@ -8,6 +8,21 @@ export type AvatarEvent =
   | { type: 'speaking:start'; voiceId?: string }
   | { type: 'speaking:stop' }
 
+// Page context for proactive system
+export interface PageReadyContext {
+  url: string
+  origin: string
+  title: string
+  pageType?: 'code' | 'article' | 'social' | 'shopping' | 'video' | 'other'
+}
+
+// Proactive action type for events
+export interface ProactiveActionEvent {
+  type: 'welcome_back' | 'follow_up' | 'context_match' | 'random_recall'
+  message: string
+  memoryId?: string
+}
+
 // Extended event map for streaming lifecycle
 interface EventMap {
   stream: (delta: string, meta?: { requestId?: string }) => void
@@ -16,6 +31,12 @@ interface EventMap {
   streamRetry: (info: { attempt: number; nextDelayMs: number; requestId?: string }) => void
   streamCancel: (meta?: { requestId?: string }) => void
   avatar: (payload: AvatarEvent) => void
+  // Proactive system events
+  'page:ready': (context: PageReadyContext) => void
+  'proactive:triggered': (action: ProactiveActionEvent) => void
+  'proactive:engaged': (memoryId: string) => void
+  'proactive:dismissed': (memoryId: string) => void
+  'proactive:ignored': (memoryId: string) => void
 }
 
 const nano = createNanoEvents<EventMap>()

@@ -447,7 +447,7 @@ async function createOverlay(cfg: OverlayConfig) {
     const state = useSettingsStore.getState()
     const shouldShow = state.sttEnabled && state.hubAccessToken
     micBtn.style.display = shouldShow ? 'flex' : 'none'
-    if (shouldShow) {
+    if (shouldShow && state.hubAccessToken) {
       sttService.initialize(state.hubUrl, state.hubAccessToken, { enabled: true })
     }
   }

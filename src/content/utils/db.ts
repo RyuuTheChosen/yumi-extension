@@ -14,7 +14,6 @@ export interface Message {
   ts: number
   scopeId: string
   
-  // Optional metadata
   meta?: {
     url?: string
     title?: string
@@ -22,6 +21,7 @@ export interface Message {
     tokensIn?: number
     tokensOut?: number
     model?: string
+    proactive?: boolean
   }
   
   status?: 'final' | 'streaming' | 'error'

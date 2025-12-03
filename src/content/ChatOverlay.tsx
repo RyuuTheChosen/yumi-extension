@@ -20,12 +20,13 @@ import {
   extractMemoriesFromConversation,
   shouldExtract,
   EXTRACTION_CONFIG,
+  migrateLocalMemories,
 } from '../lib/memory'
 import { isVisionQuery } from '../lib/context/visionTrigger'
 import { extractPageContext, buildContextForPrompt } from '../lib/context'
 import { ttsService } from '../lib/tts'
 import { StreamingTTSService, extractCompleteSentences } from '../lib/tts/streamingTts'
-import { bus } from '../lib/bus'
+import { bus, type PageReadyContext } from '../lib/bus'
 import { getActiveCompanion } from '../lib/companions/loader'
 import {
   shouldSuggestSearch,
@@ -35,6 +36,14 @@ import {
   type SearchResult,
 } from '../lib/search'
 import { SearchPrompt } from './components/SearchPrompt'
+import {
+  ProactiveMemoryController,
+  type ProactiveAction,
+  detectPageType,
+} from '../lib/memory'
+import { bubbleManager } from './visionAbilities/FloatingResponseBubble'
+import { isChatOverlayOpen } from './chatState'
+import { getAvatarPosition } from './visionAbilities/utils'
 
 // Debug panel: only available in development builds
 declare const __DEV__: boolean
@@ -67,6 +76,9 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
   const [pendingMessage, setPendingMessage] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [isSearching, setIsSearching] = useState(false)
+  const [searchError, setSearchError] = useState<string | null>(null)
+  const [messageSources, setMessageSources] = useState<Map<string, SearchResult[]>>(new Map())
+  const pendingSourcesRef = useRef<SearchResult[] | null>(null)
 
   const currentScope = useScopedChatStore(s => s.currentScope)
   const threads = useScopedChatStore(s => s.threads)
@@ -103,6 +115,7 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
   const loadMemories = useMemo(() => useMemoryStore.getState().loadMemories, [])
   const addMemories = useMemo(() => useMemoryStore.getState().addMemories, [])
   const setLastExtractionAt = useMemo(() => useMemoryStore.getState().setLastExtractionAt, [])
+  const updateImportance = useMemo(() => useMemoryStore.getState().updateImportance, [])
 
   // TTS settings (voice from companion, volume from settings)
   const ttsEnabled = useSettingsStore(s => s.ttsEnabled)
@@ -114,6 +127,15 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
   // STT settings
   const sttEnabled = useSettingsStore(s => s.sttEnabled)
 
+  // Proactive settings
+  const proactiveEnabled = useSettingsStore(s => s.proactiveEnabled)
+  const proactiveFollowUp = useSettingsStore(s => s.proactiveFollowUp)
+  const proactiveContext = useSettingsStore(s => s.proactiveContext)
+  const proactiveRandom = useSettingsStore(s => s.proactiveRandom)
+  const proactiveWelcomeBack = useSettingsStore(s => s.proactiveWelcomeBack)
+  const proactiveCooldownMins = useSettingsStore(s => s.proactiveCooldownMins)
+  const proactiveMaxPerSession = useSettingsStore(s => s.proactiveMaxPerSession)
+
   // MessageInput ref for external STT results
   const messageInputRef = useRef<MessageInputHandle>(null)
 
@@ -124,6 +146,10 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
   const streamingTtsRef = useRef<StreamingTTSService | null>(null)
   const sentenceBufferRef = useRef<string>('')
   const streamingTtsFailedRef = useRef<boolean>(false)
+
+  // Proactive system state
+  const [proactiveAction, setProactiveAction] = useState<ProactiveAction | null>(null)
+  const proactiveControllerRef = useRef<ProactiveMemoryController | null>(null)
   
   // Port-based streaming connection - emit bus events for streaming TTS
   const { connected, sendMessage: sendViaPort } = usePortConnection({
@@ -199,14 +225,162 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
     return () => document.removeEventListener('yumi-stt-result', handleSTTResult)
   }, [isExpanded, onToggle])
 
-  // Load memories on mount
+  // Migrate and load memories on mount
   useEffect(() => {
     if (!memoriesLoaded) {
-      loadMemories().then(() => {
-        log.log(' Memories loaded')
-      })
+      // First migrate any local page memories to shared extension storage
+      migrateLocalMemories()
+        .then((count) => {
+          if (count > 0) {
+            log.log(` Migrated ${count} memories from local storage`)
+          }
+          return loadMemories()
+        })
+        .then(() => {
+          log.log(' Memories loaded')
+        })
+        .catch((err) => {
+          log.error(' Memory load failed:', err)
+        })
     }
   }, [memoriesLoaded, loadMemories])
+
+  // Initialize proactive controller (only once when memories are loaded)
+  useEffect(() => {
+    if (!memoriesLoaded) return
+
+    const controller = new ProactiveMemoryController({
+      enabled: proactiveEnabled,
+      followUpEnabled: proactiveFollowUp,
+      contextMatchEnabled: proactiveContext,
+      randomRecallEnabled: proactiveRandom,
+      welcomeBackEnabled: proactiveWelcomeBack,
+      cooldownMinutes: proactiveCooldownMins,
+      maxPerSession: proactiveMaxPerSession,
+    })
+
+    controller.initialize().then(async () => {
+      proactiveControllerRef.current = controller
+      log.log(' Proactive controller initialized')
+
+      // Check for welcome back or follow-ups on session start
+      if (proactiveEnabled) {
+        const pageContext: PageReadyContext = {
+          url: window.location.href,
+          origin: window.location.origin,
+          title: document.title,
+          pageType: detectPageType(window.location.href, document.title),
+        }
+
+        const action = await controller.getProactiveAction(memories, pageContext, true)
+        if (action) {
+          log.log(' Proactive action on session start:', action.type)
+          setProactiveAction(action)
+        }
+      }
+    })
+
+    return () => {
+      proactiveControllerRef.current = null
+    }
+  // Only re-run when memories are loaded - settings are updated via updateConfig
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [memoriesLoaded])
+
+  // Update controller config when settings change
+  useEffect(() => {
+    if (proactiveControllerRef.current) {
+      proactiveControllerRef.current.updateConfig({
+        enabled: proactiveEnabled,
+        followUpEnabled: proactiveFollowUp,
+        contextMatchEnabled: proactiveContext,
+        randomRecallEnabled: proactiveRandom,
+        welcomeBackEnabled: proactiveWelcomeBack,
+        cooldownMinutes: proactiveCooldownMins,
+        maxPerSession: proactiveMaxPerSession,
+      })
+    }
+  }, [
+    proactiveEnabled,
+    proactiveFollowUp,
+    proactiveContext,
+    proactiveRandom,
+    proactiveWelcomeBack,
+    proactiveCooldownMins,
+    proactiveMaxPerSession,
+  ])
+
+  // Periodic proactive check (every cooldown period)
+  useEffect(() => {
+    if (!proactiveEnabled || !proactiveControllerRef.current) return
+
+    const intervalMs = proactiveCooldownMins * 60 * 1000
+
+    const checkProactive = async () => {
+      if (!proactiveControllerRef.current || proactiveAction) return
+
+      const pageContext: PageReadyContext = {
+        url: window.location.href,
+        origin: window.location.origin,
+        title: document.title,
+        pageType: detectPageType(window.location.href, document.title),
+      }
+
+      const action = await proactiveControllerRef.current.getProactiveAction(memories, pageContext)
+      if (action) {
+        log.log(' Proactive action (periodic):', action.type)
+        setProactiveAction(action)
+      }
+    }
+
+    const interval = setInterval(checkProactive, intervalMs)
+
+    return () => clearInterval(interval)
+  }, [proactiveEnabled, proactiveCooldownMins, proactiveAction, memories])
+
+  useEffect(() => {
+    if (!proactiveAction || !proactiveControllerRef.current) return
+
+    const displayProactive = async () => {
+      proactiveControllerRef.current?.recordProactive(proactiveAction.memory?.id, proactiveAction)
+
+      if (!isChatOverlayOpen()) {
+        const avatarPos = getAvatarPosition()
+        if (avatarPos) {
+          const requestId = `proactive-${Date.now()}`
+          const bubble = bubbleManager.create({
+            position: { x: avatarPos.x, y: avatarPos.y },
+            anchor: 'avatar',
+            autoFadeMs: 15000,
+          }, requestId)
+
+          if (bubble) {
+            bubble.appendChunk(proactiveAction.message)
+            bubble.finalize()
+            log.log(' Proactive bubble displayed:', proactiveAction.type)
+          }
+        }
+      } else {
+        const store = useScopedChatStore.getState()
+        await store.addProactiveMessage(proactiveAction.message)
+        log.log(' Proactive message added to chat:', proactiveAction.type)
+      }
+
+      if (ttsEnabled) {
+        ttsService.speak(proactiveAction.message)
+        bus.emit('avatar', { type: 'speaking:start' })
+      }
+
+      bus.emit('proactive:triggered', {
+        type: proactiveAction.type,
+        message: proactiveAction.message,
+        memoryId: proactiveAction.memory?.id,
+      })
+    }
+
+    displayProactive()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proactiveAction, ttsEnabled])
 
   // Initialize TTS service with Hub credentials and companion voice
   useEffect(() => {
@@ -532,6 +706,21 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
     }
   }, [])
 
+  useEffect(() => {
+    if (status === 'idle' && pendingSourcesRef.current && displayMessages.length > 0) {
+      const lastMessage = displayMessages[displayMessages.length - 1]
+      if (lastMessage.role === 'assistant' && lastMessage.id) {
+        log.log(' Associating sources with message:', lastMessage.id)
+        setMessageSources(prev => {
+          const next = new Map(prev)
+          next.set(lastMessage.id, pendingSourcesRef.current!)
+          return next
+        })
+        pendingSourcesRef.current = null
+      }
+    }
+  }, [status, displayMessages])
+
   // Sync refs with latest values
   useEffect(() => {
     statusRef.current = status
@@ -614,6 +803,7 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
     if (searchResults && searchResults.length > 0) {
       searchContextStr = formatSearchResultsForPrompt(searchResults)
       log.log(' Including search context:', searchResults.length, 'results')
+      pendingSourcesRef.current = searchResults
     }
 
     // Send via port for streaming with conversation history and context
@@ -656,17 +846,17 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
 
     setShowSearchPrompt(false)
     setIsSearching(true)
+    setSearchError(null)
 
     try {
       log.log(' Performing web search for:', searchQuery)
       const response = await performSearch({ query: searchQuery })
       log.log(' Search completed:', response.results.length, 'results')
-
-      // Send message with search results
       await doSendMessage(pendingMessage, response.results)
     } catch (err) {
       log.warn(' Search failed, sending without results:', err)
-      // If search fails, send without search results
+      setSearchError('Search unavailable, answering from knowledge')
+      setTimeout(() => setSearchError(null), 4000)
       await doSendMessage(pendingMessage)
     } finally {
       setIsSearching(false)
@@ -730,7 +920,49 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
     useScopedChatStore.getState().togglePrivateMode()
   }, [])
 
-  // Don't render anything when collapsed - button is in native DOM
+  // Handle proactive message - add to chat and show
+  const showProactiveMessage = useCallback(async (action: ProactiveAction) => {
+    if (!proactiveControllerRef.current) return
+
+    // Record that we're showing this proactive
+    proactiveControllerRef.current.recordProactive(action.memory?.id)
+
+    // Add as assistant message
+    const store = useScopedChatStore.getState()
+    await store.addProactiveMessage(action.message)
+
+    // Expand chat to show the message
+    setIsExpanded(true)
+    setChatOpen(true)
+    onToggle?.(true)
+
+    // Track the action for feedback when user responds
+    setProactiveAction(action)
+
+    log.log(' Proactive message shown:', action.type)
+    bus.emit('proactive:triggered', {
+      type: action.type,
+      message: action.message,
+      memoryId: action.memory?.id,
+    })
+  }, [onToggle])
+
+  // Mark proactive as engaged when user responds
+  const handleProactiveEngaged = useCallback(async () => {
+    if (!proactiveAction || !proactiveControllerRef.current) return
+
+    const memoryId = proactiveAction.memory?.id
+    if (memoryId) {
+      proactiveControllerRef.current.recordFeedback(memoryId, 'engaged')
+      await updateImportance(memoryId, 0.1)
+      bus.emit('proactive:engaged', memoryId)
+      log.log(' Proactive engaged:', proactiveAction.type)
+    }
+
+    setProactiveAction(null)
+  }, [proactiveAction, updateImportance])
+
+  // Don't render when collapsed - chat button handles expansion
   if (!isExpanded) return null
 
   const hasMessages = displayMessages.length > 0
@@ -797,6 +1029,7 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
                 name: activePersonality?.name || 'Yumi',
                 avatar: activePersonality?.avatar
               } : undefined}
+              sources={m.role === 'assistant' ? messageSources.get(m.id) : undefined}
             />
           ))}
 
@@ -846,6 +1079,26 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
                     className="w-4 h-4 border-2 border-white/30 border-t-white/70 rounded-full"
                   />
                   Searching the web...
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <AnimatePresence>
+            {searchError && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="mb-3 p-3 rounded-xl"
+                style={{
+                  background: 'rgba(251, 191, 36, 0.15)',
+                  border: '1px solid rgba(251, 191, 36, 0.30)',
+                }}
+              >
+                <div className="flex items-center gap-2 text-sm text-amber-200/90">
+                  <span className="text-amber-400">!</span>
+                  {searchError}
                 </div>
               </motion.div>
             )}

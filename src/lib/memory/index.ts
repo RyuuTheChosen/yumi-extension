@@ -43,7 +43,7 @@ export {
 } from './types'
 
 // Store
-export { useMemoryStore, calculateDecayedImportance } from './memoryStore'
+export { useMemoryStore, calculateDecayedImportance, migrateLocalMemories } from './memoryStore'
 
 // Database
 export {
@@ -101,3 +101,30 @@ export {
   buildExtractionPrompt,
   buildExtractionPromptWithContext,
 } from './prompts'
+
+// Proactive Memory System (Phase 3)
+export {
+  getFollowUpCandidates,
+  extractSubject,
+} from './followUp'
+
+export type { FollowUpCandidate, FollowUpReason } from './followUp'
+
+export {
+  findContextMatches,
+  detectPageType,
+} from './contextMatcher'
+
+export type { ContextMatch, PageContext } from './contextMatcher'
+
+export {
+  ProactiveMemoryController,
+  loadProactiveHistory,
+} from './proactiveController'
+
+export type {
+  ProactiveAction,
+  ProactiveActionType,
+  ProactiveConfig,
+  ProactiveHistoryEntry,
+} from './proactiveController'

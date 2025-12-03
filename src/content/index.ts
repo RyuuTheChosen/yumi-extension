@@ -2,6 +2,7 @@ import { extractMainContent } from './extract'
 import { mountOverlay, unmountOverlay, updateOverlayConfig } from './overlayAvatar'
 import { bus } from '../lib/bus'
 import { createLogger } from '../lib/debug'
+import { detectPageType } from '../lib/memory'
 
 const log = createLogger('Content')
 import { getActiveCompanion } from '../lib/companions/loader'
@@ -167,6 +168,17 @@ async function maybeMountOverlay() {
 }
 
 maybeMountOverlay()
+
+// Emit page:ready for proactive system (after a brief delay for page to settle)
+setTimeout(() => {
+	bus.emit('page:ready', {
+		url: window.location.href,
+		origin: window.location.origin,
+		title: document.title,
+		pageType: detectPageType(window.location.href, document.title),
+	})
+	log.log(' Emitted page:ready')
+}, 1500)
 
 chrome.storage.onChanged.addListener(async (changes, area) => {
 	if (area !== 'local') return
