@@ -10,7 +10,7 @@ import { useSettingsStore } from '../lib/stores/settings.store'
 import { usePortConnection } from './hooks/usePortConnection'
 import { ChatHeader } from './components/ChatHeader'
 import { MessageBubble } from './components/MessageBubble'
-import { MessageInput } from './components/MessageInput'
+import { MessageInput, type MessageInputHandle } from './components/MessageInput'
 import { EmptyState } from './components/EmptyState'
 import { getThreadMessages } from './utils/db'
 import { setChatOpen } from './chatState'
@@ -27,6 +27,14 @@ import { ttsService } from '../lib/tts'
 import { StreamingTTSService, extractCompleteSentences } from '../lib/tts/streamingTts'
 import { bus } from '../lib/bus'
 import { getActiveCompanion } from '../lib/companions/loader'
+import {
+  shouldSuggestSearch,
+  extractSearchQuery,
+  performSearch,
+  formatSearchResultsForPrompt,
+  type SearchResult,
+} from '../lib/search'
+import { SearchPrompt } from './components/SearchPrompt'
 
 // Debug panel: only available in development builds
 declare const __DEV__: boolean
@@ -53,6 +61,12 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
   // Pre-filled context from context menu (right-click "Ask Yumi about this")
   const [prefilledContext, setPrefilledContext] = useState<string | null>(null)
   const [contextSource, setContextSource] = useState<'selection' | 'element' | null>(null)
+
+  // Web search state
+  const [showSearchPrompt, setShowSearchPrompt] = useState(false)
+  const [pendingMessage, setPendingMessage] = useState<string | null>(null)
+  const [searchQuery, setSearchQuery] = useState<string>('')
+  const [isSearching, setIsSearching] = useState(false)
 
   const currentScope = useScopedChatStore(s => s.currentScope)
   const threads = useScopedChatStore(s => s.threads)
@@ -96,6 +110,12 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
   const activeCompanionSlug = useSettingsStore(s => s.activeCompanionSlug)
   const hubUrl = useSettingsStore(s => s.hubUrl)
   const hubAccessToken = useSettingsStore(s => s.hubAccessToken)
+
+  // STT settings
+  const sttEnabled = useSettingsStore(s => s.sttEnabled)
+
+  // MessageInput ref for external STT results
+  const messageInputRef = useRef<MessageInputHandle>(null)
 
   // Extraction timer ref
   const extractionTimerRef = useRef<number | null>(null)
@@ -159,6 +179,25 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
     window.addEventListener('yumi:open-with-context', handleContextEvent)
     return () => window.removeEventListener('yumi:open-with-context', handleContextEvent)
   }, [onToggle])
+
+  // Listen for STT results from overlay button
+  useEffect(() => {
+    const handleSTTResult = (e: Event) => {
+      const customEvent = e as CustomEvent<{ text: string }>
+      if (customEvent.detail?.text && messageInputRef.current) {
+        messageInputRef.current.appendText(customEvent.detail.text)
+        // Auto-expand chat when STT result received
+        if (!isExpanded) {
+          setIsExpanded(true)
+          setChatOpen(true)
+          onToggle?.(true)
+        }
+      }
+    }
+
+    document.addEventListener('yumi-stt-result', handleSTTResult)
+    return () => document.removeEventListener('yumi-stt-result', handleSTTResult)
+  }, [isExpanded, onToggle])
 
   // Load memories on mount
   useEffect(() => {
@@ -502,7 +541,8 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
     sendMessageActionRef.current = sendMessageAction
   }, [status, connected, sendViaPort, currentScope, sendMessageAction])
   
-  const handleSendMessage = useCallback(async (content: string) => {
+  // Internal function to actually send the message (called after search decision)
+  const doSendMessage = useCallback(async (content: string, searchResults?: SearchResult[]) => {
     if (!content.trim() || statusRef.current === 'sending' || statusRef.current === 'streaming') return
 
     // Capture prefilled context before clearing it
@@ -569,6 +609,13 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
       log.log(' Including selected context:', selectedContext.slice(0, 100) + '...')
     }
 
+    // Build search context string if we have search results
+    let searchContextStr: string | undefined
+    if (searchResults && searchResults.length > 0) {
+      searchContextStr = formatSearchResultsForPrompt(searchResults)
+      log.log(' Including search context:', searchResults.length, 'results')
+    }
+
     // Send via port for streaming with conversation history and context
     if (connectedRef.current) {
       // If we have a screenshot, send as vision query; otherwise regular chat
@@ -580,6 +627,7 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
           history,
           memoryContext: memoryContext || undefined,
           selectedContext: selectedContextStr,
+          searchContext: searchContextStr,
           pageContext,  // Include page content for AI awareness
           pageType,
           screenshot: screenshotBase64,  // Include screenshot for vision
@@ -592,6 +640,7 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
           history,
           memoryContext: memoryContext || undefined,
           selectedContext: selectedContextStr,
+          searchContext: searchContextStr,
           pageContext,  // Include page content for AI awareness
           pageType,
         })
@@ -600,6 +649,60 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
       log.warn(' Port not connected, cannot stream')
     }
   }, [prefilledContext, contextSource])
+
+  // Handle search prompt callbacks
+  const handleSearchConfirm = useCallback(async () => {
+    if (!pendingMessage) return
+
+    setShowSearchPrompt(false)
+    setIsSearching(true)
+
+    try {
+      log.log(' Performing web search for:', searchQuery)
+      const response = await performSearch({ query: searchQuery })
+      log.log(' Search completed:', response.results.length, 'results')
+
+      // Send message with search results
+      await doSendMessage(pendingMessage, response.results)
+    } catch (err) {
+      log.warn(' Search failed, sending without results:', err)
+      // If search fails, send without search results
+      await doSendMessage(pendingMessage)
+    } finally {
+      setIsSearching(false)
+      setPendingMessage(null)
+      setSearchQuery('')
+    }
+  }, [pendingMessage, searchQuery, doSendMessage])
+
+  const handleSearchSkip = useCallback(async () => {
+    if (!pendingMessage) return
+
+    setShowSearchPrompt(false)
+    setPendingMessage(null)
+    setSearchQuery('')
+
+    // Send message without search results
+    await doSendMessage(pendingMessage)
+  }, [pendingMessage, doSendMessage])
+
+  // Main send message handler - checks if search should be suggested
+  const handleSendMessage = useCallback(async (content: string) => {
+    if (!content.trim() || statusRef.current === 'sending' || statusRef.current === 'streaming') return
+
+    // Check if we should suggest a web search
+    if (shouldSuggestSearch(content)) {
+      const query = extractSearchQuery(content)
+      log.log(' Search suggested for:', query)
+      setSearchQuery(query)
+      setPendingMessage(content)
+      setShowSearchPrompt(true)
+      return
+    }
+
+    // No search needed, send directly
+    await doSendMessage(content)
+  }, [doSendMessage])
   
   const handleClearThread = useCallback(async () => {
     if (confirm('Clear conversation from view? (Messages remain in history)')) {
@@ -718,6 +821,35 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
               </motion.div>
             )}
           </AnimatePresence>
+
+          {/* Search Prompt */}
+          <SearchPrompt
+            query={searchQuery}
+            visible={showSearchPrompt}
+            onSearch={handleSearchConfirm}
+            onSkip={handleSearchSkip}
+          />
+
+          {/* Searching Indicator */}
+          <AnimatePresence>
+            {isSearching && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                className="mb-3 p-3 rounded-xl glass-bubble-ai"
+              >
+                <div className="flex items-center gap-2 text-sm text-white/70">
+                  <motion.span
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
+                    className="w-4 h-4 border-2 border-white/30 border-t-white/70 rounded-full"
+                  />
+                  Searching the web...
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Context Preview (from right-click menu) */}
@@ -765,7 +897,14 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
         </AnimatePresence>
 
         {/* Message Input */}
-        <MessageInput onSend={handleSendMessage} disabled={!connected || status === 'sending' || status === 'streaming'} />
+        <MessageInput
+          ref={messageInputRef}
+          onSend={handleSendMessage}
+          disabled={!connected || status === 'sending' || status === 'streaming'}
+          sttEnabled={sttEnabled}
+          hubUrl={hubUrl}
+          hubAccessToken={hubAccessToken}
+        />
       </div>
 
       {/* Expression Debug Panel - for tuning parameters (dev only) */}

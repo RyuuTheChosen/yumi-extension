@@ -41,6 +41,8 @@ interface SettingsState {
   ttsEnabled: boolean
   ttsVolume: number  // 0-1 volume level
   ttsSpeed: number   // 0.5-2.0 playback speed
+  // STT (Speech-to-Text) settings - via Hub
+  sttEnabled: boolean
   setRelayUrl: (url: string) => void
   setModel: (m: string) => void
   // Hub actions
@@ -62,6 +64,8 @@ interface SettingsState {
   setTTSEnabled: (enabled: boolean) => void
   setTTSVolume: (volume: number) => void
   setTTSSpeed: (speed: number) => void
+  // STT setters
+  setSTTEnabled: (enabled: boolean) => void
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -86,6 +90,8 @@ export const useSettingsStore = create<SettingsState>()(
       ttsEnabled: true,
       ttsVolume: 1.0, // Full volume by default
       ttsSpeed: 1.0,  // Normal speed by default
+      // STT defaults (ElevenLabs via Hub)
+      sttEnabled: false, // Opt-in, requires microphone permission
       setRelayUrl: (url) => set({ relayUrl: url }),
       setModel: (m) => set({ model: m }),
       setEnableLive2D: (enabled) => set({ enableLive2D: enabled }),
@@ -150,6 +156,8 @@ export const useSettingsStore = create<SettingsState>()(
       setTTSEnabled: (enabled) => set({ ttsEnabled: enabled }),
       setTTSVolume: (volume) => set({ ttsVolume: Math.max(0, Math.min(1, volume)) }),
       setTTSSpeed: (speed) => set({ ttsSpeed: Math.max(0.5, Math.min(2.0, speed)) }),
+      // STT setters
+      setSTTEnabled: (enabled) => set({ sttEnabled: enabled }),
     }),
     {
       name: 'settings-store',
@@ -174,9 +182,11 @@ export const useSettingsStore = create<SettingsState>()(
         ttsEnabled: s.ttsEnabled,
         ttsVolume: s.ttsVolume,
         ttsSpeed: s.ttsSpeed,
+        // STT fields
+        sttEnabled: s.sttEnabled,
       }),
       skipHydration: true, // Manual rehydration for content script timing control
-      version: 18, // Add TTS speed control
+      version: 19, // Add STT (Speech-to-Text) setting
       migrate: (persisted: any, fromVersion: number) => {
         // Handle older shapes by adding new defaults
         const base = persisted || {}
@@ -290,6 +300,10 @@ export const useSettingsStore = create<SettingsState>()(
         if (fromVersion < 18) {
           // Add TTS speed control
           if (typeof state.ttsSpeed !== 'number') state.ttsSpeed = 1.0
+        }
+        if (fromVersion < 19) {
+          // Add STT (Speech-to-Text) setting
+          if (typeof state.sttEnabled !== 'boolean') state.sttEnabled = false
         }
         return { ...base, state }
       },

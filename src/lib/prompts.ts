@@ -19,6 +19,7 @@ export interface PageContextInfo {
   pageType?: string
   pageContext?: string  // Pre-built context string from buildContextForPrompt() (deprecated)
   selectedContext?: string  // User-selected content from right-click context menu
+  searchContext?: string  // Web search results context
 }
 
 /**
@@ -91,6 +92,11 @@ export function buildChatSystemPrompt(
     prompt += `- Reference specific details from the page when answering questions about it\n`
     prompt += `- If the user's question relates to the page content, leverage this context\n`
     prompt += `- Don't mention "page context" explicitly - just naturally incorporate the knowledge\n`
+  }
+
+  // Add web search results if available
+  if (pageInfo?.searchContext && pageInfo.searchContext.trim()) {
+    prompt += `\n\n${pageInfo.searchContext}`
   }
 
   // Add conversational context (the only dynamic part)

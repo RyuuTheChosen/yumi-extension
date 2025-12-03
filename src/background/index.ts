@@ -520,6 +520,124 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     // Return true to indicate we will call sendResponse asynchronously
     return true
   }
+
+  // ===== WEB SEARCH =====
+  // Perform web search via Hub API
+  if (msg.type === 'SEARCH_REQUEST') {
+    const { query, maxResults, searchDepth } = msg.payload || {}
+
+    log.log(` Search request: "${query}"`)
+
+    ;(async () => {
+      try {
+        // Get Hub settings
+        const data = await chrome.storage.local.get('settings-store')
+        let settingsStore: any
+        if (typeof data?.['settings-store'] === 'string') {
+          settingsStore = JSON.parse(data['settings-store'])
+        } else {
+          settingsStore = data?.['settings-store']
+        }
+
+        const hubUrl = settingsStore?.state?.hubUrl
+        const hubAccessToken = settingsStore?.state?.hubAccessToken
+        const hubRefreshToken = settingsStore?.state?.hubRefreshToken
+
+        if (!hubAccessToken || !hubUrl) {
+          sendResponse({ success: false, error: 'Hub not connected' })
+          return
+        }
+
+        const startTime = Date.now()
+
+        const response = await fetch(`${hubUrl}/v1/search`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${hubAccessToken}`,
+          },
+          body: JSON.stringify({
+            query,
+            max_results: maxResults || 5,
+            search_depth: searchDepth || 'basic',
+          }),
+        })
+
+        // Handle 401 - token might be expired
+        if (response.status === 401) {
+          log.log(' Search: Hub token expired, attempting refresh')
+          const refreshed = await tryRefreshHubToken({ hubUrl, hubAccessToken, hubRefreshToken, settingsStore })
+          if (refreshed) {
+            // Get new token and retry
+            const newData = await chrome.storage.local.get('settings-store')
+            let newSettingsStore: any
+            if (typeof newData?.['settings-store'] === 'string') {
+              newSettingsStore = JSON.parse(newData['settings-store'])
+            } else {
+              newSettingsStore = newData?.['settings-store']
+            }
+
+            const retryResponse = await fetch(`${hubUrl}/v1/search`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${newSettingsStore?.state?.hubAccessToken}`,
+              },
+              body: JSON.stringify({
+                query,
+                max_results: maxResults || 5,
+                search_depth: searchDepth || 'basic',
+              }),
+            })
+
+            if (!retryResponse.ok) {
+              const errText = await retryResponse.text().catch(() => 'Unknown error')
+              sendResponse({ success: false, error: `Search failed: ${errText}` })
+              return
+            }
+
+            const json = await retryResponse.json()
+            const elapsed = Date.now() - startTime
+            log.log(` Search complete (after refresh): ${json.results?.length || 0} results in ${elapsed}ms`)
+            sendResponse({
+              success: true,
+              query: json.query,
+              results: json.results,
+              responseTimeMs: json.response_time_ms,
+            })
+            return
+          } else {
+            sendResponse({ success: false, error: 'Hub session expired. Please log in again.' })
+            return
+          }
+        }
+
+        if (!response.ok) {
+          const errText = await response.text().catch(() => 'Unknown error')
+          sendResponse({ success: false, error: `Search failed: ${errText}` })
+          return
+        }
+
+        const json = await response.json()
+        const elapsed = Date.now() - startTime
+
+        log.log(` Search complete: ${json.results?.length || 0} results in ${elapsed}ms`)
+
+        sendResponse({
+          success: true,
+          query: json.query,
+          results: json.results,
+          responseTimeMs: json.response_time_ms,
+        })
+
+      } catch (err: any) {
+        log.error(' Search error:', err)
+        sendResponse({ success: false, error: err?.message || 'Unknown error' })
+      }
+    })()
+
+    return true
+  }
 })
 
 // ===== PORT-BASED STREAMING FOR OVERLAY =====
@@ -585,6 +703,7 @@ interface PortStreamPayload {
   pageType?: string       // Page type from context extraction
   pageContext?: string    // Formatted page context from content script (deprecated)
   selectedContext?: string // User-selected content from right-click context menu
+  searchContext?: string  // Web search results context
   screenshot?: string     // Base64 screenshot for vision queries
 }
 
@@ -605,7 +724,7 @@ async function streamViaHub(
   startTime: number,
   hubConfig: HubConfig
 ) {
-  const { scopeId, content, requestId, history, memoryContext, pageType, pageContext, selectedContext, screenshot } = payload
+  const { scopeId, content, requestId, history, memoryContext, pageType, pageContext, selectedContext, searchContext, screenshot } = payload
   const { hubUrl, hubAccessToken, settingsStore } = hubConfig
 
   log.log(` Hub streaming for scope: ${scopeId}, requestId: ${requestId}`)
@@ -628,8 +747,8 @@ async function streamViaHub(
     const messages: Array<{ role: string; content: any }> = []
 
     // Build pageInfo for the prompt
-    const pageInfo = (selectedContext || pageContext)
-      ? { pageType, pageContext, selectedContext }
+    const pageInfo = (selectedContext || pageContext || searchContext)
+      ? { pageType, pageContext, selectedContext, searchContext }
       : undefined
 
     const enhancedSystemPrompt = buildChatSystemPrompt(

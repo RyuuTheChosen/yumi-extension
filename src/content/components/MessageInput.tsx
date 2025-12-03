@@ -1,22 +1,40 @@
-/**
- * MessageInput Component
- * Clean auto-resize textarea with send button
- */
-
-import { useState, useRef, useEffect } from 'react';
-import { Send } from 'lucide-react';
+import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
+import { Send, Mic, Loader2 } from 'lucide-react';
 import { cn } from '../../lib/design/utils';
+import { sttService } from '../../lib/stt/sttService';
+import type { STTState, STTEvent } from '../../lib/stt/types';
 
 interface MessageInputProps {
   onSend: (content: string) => void;
   disabled?: boolean;
+  sttEnabled?: boolean;
+  hubUrl?: string;
+  hubAccessToken?: string | null;
 }
 
-export function MessageInput({ onSend, disabled = false }: MessageInputProps) {
-  const [input, setInput] = useState('');
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+export interface MessageInputHandle {
+  appendText: (text: string) => void;
+}
 
-  // Auto-resize textarea
+export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(function MessageInput({
+  onSend,
+  disabled = false,
+  sttEnabled = false,
+  hubUrl,
+  hubAccessToken,
+}, ref) {
+  const [input, setInput] = useState('');
+  const [sttState, setSTTState] = useState<STTState>('idle');
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    appendText: (text: string) => {
+      setInput((prev) => prev + (prev ? ' ' : '') + text);
+    },
+  }), []);
+
   useEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
@@ -24,6 +42,71 @@ export function MessageInput({ onSend, disabled = false }: MessageInputProps) {
     textarea.style.height = 'auto';
     textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
   }, [input]);
+
+  useEffect(() => {
+    if (!sttEnabled || !hubUrl || !hubAccessToken) return;
+
+    sttService.initialize(hubUrl, hubAccessToken, { enabled: true });
+
+    const unsubscribe = sttService.on((event: STTEvent) => {
+      switch (event.type) {
+        case 'recording:start':
+          setSTTState('recording');
+          setRecordingDuration(0);
+          durationIntervalRef.current = setInterval(() => {
+            setRecordingDuration(sttService.getRecordingDuration());
+          }, 100);
+          break;
+        case 'recording:stop':
+          if (durationIntervalRef.current) {
+            clearInterval(durationIntervalRef.current);
+            durationIntervalRef.current = null;
+          }
+          break;
+        case 'transcription:start':
+          setSTTState('transcribing');
+          break;
+        case 'transcription:complete':
+          setSTTState('idle');
+          setRecordingDuration(0);
+          if (event.text) {
+            setInput((prev) => prev + (prev ? ' ' : '') + event.text);
+          }
+          break;
+        case 'transcription:error':
+          setSTTState('idle');
+          setRecordingDuration(0);
+          console.error('[MessageInput] STT error:', event.error);
+          break;
+      }
+    });
+
+    return () => {
+      sttService.cancelRecording();
+      if (durationIntervalRef.current) {
+        clearInterval(durationIntervalRef.current);
+      }
+      unsubscribe();
+    };
+  }, [sttEnabled, hubUrl, hubAccessToken]);
+
+  const handleMicMouseDown = async () => {
+    if (!sttEnabled || !hubAccessToken || sttState !== 'idle') return;
+    await sttService.startRecording();
+  };
+
+  const handleMicMouseUp = async () => {
+    if (sttState !== 'recording') return;
+    await sttService.stopRecordingAndTranscribe();
+  };
+
+  const handleMicCancel = () => {
+    if (sttState === 'recording') {
+      sttService.cancelRecording();
+      setSTTState('idle');
+      setRecordingDuration(0);
+    }
+  };
 
   const handleSubmit = () => {
     if (!input.trim() || disabled) return;
@@ -44,6 +127,11 @@ export function MessageInput({ onSend, disabled = false }: MessageInputProps) {
   const isOverLimit = charCount > maxChars;
   const canSend = input.trim() && !isOverLimit && !disabled;
 
+  const formatDuration = (ms: number) => {
+    const seconds = Math.floor(ms / 1000);
+    return `${seconds}s`;
+  };
+
   return (
     <div
       className="p-2"
@@ -53,7 +141,6 @@ export function MessageInput({ onSend, disabled = false }: MessageInputProps) {
       }}
     >
       <div className="flex items-end gap-2">
-        {/* Textarea */}
         <div className="flex-1 relative">
           <textarea
             ref={textareaRef}
@@ -73,7 +160,6 @@ export function MessageInput({ onSend, disabled = false }: MessageInputProps) {
             disabled={disabled}
           />
 
-          {/* Character count - only show when near limit */}
           {charCount > maxChars * 0.8 && (
             <span
               className={cn(
@@ -86,7 +172,47 @@ export function MessageInput({ onSend, disabled = false }: MessageInputProps) {
           )}
         </div>
 
-        {/* Send Button */}
+        {sttEnabled && hubAccessToken && (
+          <button
+            onMouseDown={handleMicMouseDown}
+            onMouseUp={handleMicMouseUp}
+            onMouseLeave={handleMicCancel}
+            onTouchStart={handleMicMouseDown}
+            onTouchEnd={handleMicMouseUp}
+            onTouchCancel={handleMicCancel}
+            onContextMenu={(e) => e.preventDefault()}
+            disabled={disabled || sttState === 'transcribing'}
+            className={cn(
+              'flex items-center justify-center min-w-9 h-9 px-2 rounded-lg transition-all duration-150 flex-shrink-0',
+              'focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40',
+              sttState === 'recording'
+                ? 'bg-red-500/80 text-white animate-pulse'
+                : sttState === 'transcribing'
+                  ? 'bg-white/20 text-white/50 cursor-wait'
+                  : 'bg-white/10 hover:bg-white/20 text-white/70'
+            )}
+            aria-label={
+              sttState === 'recording'
+                ? 'Recording... Release to transcribe'
+                : sttState === 'transcribing'
+                  ? 'Transcribing...'
+                  : 'Hold to record'
+            }
+            title="Hold to record, release to transcribe"
+          >
+            {sttState === 'transcribing' ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : sttState === 'recording' ? (
+              <span className="flex items-center gap-1">
+                <Mic size={16} />
+                <span className="text-xs font-medium">{formatDuration(recordingDuration)}</span>
+              </span>
+            ) : (
+              <Mic size={16} />
+            )}
+          </button>
+        )}
+
         <button
           onClick={handleSubmit}
           disabled={!canSend}
@@ -104,4 +230,4 @@ export function MessageInput({ onSend, disabled = false }: MessageInputProps) {
       </div>
     </div>
   );
-}
+})

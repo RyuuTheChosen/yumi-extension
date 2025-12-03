@@ -5,6 +5,8 @@
 import * as PIXI from 'pixi.js'
 import { createLogger } from '../lib/debug'
 import { AVATAR, BREAKPOINTS } from '../lib/design/dimensions'
+import { sttService } from '../lib/stt/sttService'
+import { useSettingsStore } from '../lib/stores/settings.store'
 
 declare const __DEV__: boolean
 const log = createLogger('Overlay')
@@ -419,8 +421,115 @@ async function createOverlay(cfg: OverlayConfig) {
   }
   closeBtn.onclick = () => destroyOverlay()
 
+  // Mic button (STT push-to-talk)
+  const micBtn = document.createElement('button')
+  micBtn.textContent = '🎤'
+  micBtn.id = 'yumi-mic-toggle'
+  let micRecording = false
+  let micDurationInterval: ReturnType<typeof setInterval> | null = null
+  Object.assign(micBtn.style, {
+    width: '40px',
+    height: '40px',
+    background: 'rgba(255, 255, 255, 0.1)',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '18px',
+    display: 'none',
+    alignItems: 'center',
+    justifyContent: 'center',
+    transition: 'all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1)',
+    pointerEvents: 'auto'
+  })
+
+  const updateMicVisibility = () => {
+    const state = useSettingsStore.getState()
+    const shouldShow = state.sttEnabled && state.hubAccessToken
+    micBtn.style.display = shouldShow ? 'flex' : 'none'
+    if (shouldShow) {
+      sttService.initialize(state.hubUrl, state.hubAccessToken, { enabled: true })
+    }
+  }
+  updateMicVisibility()
+  useSettingsStore.subscribe(updateMicVisibility)
+
+  const resetMicButton = () => {
+    micRecording = false
+    if (micDurationInterval) {
+      clearInterval(micDurationInterval)
+      micDurationInterval = null
+    }
+    micBtn.style.background = 'rgba(255, 255, 255, 0.1)'
+    micBtn.style.transform = 'scale(1)'
+    micBtn.style.boxShadow = 'none'
+    micBtn.textContent = '🎤'
+  }
+
+  const showError = () => {
+    micBtn.style.background = 'rgba(239, 68, 68, 0.8)'
+    micBtn.textContent = '!'
+    setTimeout(resetMicButton, 1500)
+  }
+
+  micBtn.onmouseenter = () => {
+    if (!micRecording) {
+      micBtn.style.background = 'rgba(255, 255, 255, 0.2)'
+      micBtn.style.transform = 'scale(1.15)'
+    }
+  }
+  micBtn.onmouseleave = () => {
+    if (!micRecording) {
+      micBtn.style.background = 'rgba(255, 255, 255, 0.1)'
+      micBtn.style.transform = 'scale(1)'
+    }
+    if (micRecording) {
+      sttService.cancelRecording()
+      resetMicButton()
+    }
+  }
+  micBtn.onmousedown = async (e) => {
+    e.preventDefault()
+    const state = useSettingsStore.getState()
+    if (!state.sttEnabled || !state.hubAccessToken) return
+
+    const started = await sttService.startRecording()
+    if (started) {
+      micRecording = true
+      micBtn.style.background = 'rgba(239, 68, 68, 0.8)'
+      micBtn.style.transform = 'scale(1.1)'
+      micBtn.style.boxShadow = '0 0 12px rgba(239, 68, 68, 0.5)'
+      micBtn.textContent = '0s'
+      micDurationInterval = setInterval(() => {
+        const duration = Math.floor(sttService.getRecordingDuration() / 1000)
+        micBtn.textContent = `${duration}s`
+      }, 100)
+    }
+  }
+  micBtn.onmouseup = async () => {
+    if (!micRecording) return
+    if (micDurationInterval) {
+      clearInterval(micDurationInterval)
+      micDurationInterval = null
+    }
+    micBtn.textContent = '...'
+    micBtn.style.background = 'rgba(255, 255, 255, 0.2)'
+    micBtn.style.boxShadow = 'none'
+    micRecording = false
+
+    const text = await sttService.stopRecordingAndTranscribe()
+    if (text) {
+      resetMicButton()
+      const inputEvent = new CustomEvent('yumi-stt-result', { detail: { text } })
+      document.dispatchEvent(inputEvent)
+    } else {
+      showError()
+    }
+  }
+
   buttonPanel.appendChild(dragHandle)
   buttonPanel.appendChild(chatBtn)
+  buttonPanel.appendChild(micBtn)
   buttonPanel.appendChild(closeBtn)
   canvasWrapper.appendChild(buttonPanel)
 
@@ -641,7 +750,7 @@ async function createOverlay(cfg: OverlayConfig) {
     
     // Pre-hydrate stores before mounting React (prevent React Error #185)
     const { usePersonalityStore } = await import('../lib/stores/personality.store')
-    const { useSettingsStore } = await import('../lib/stores/settings.store')
+    const { useSettingsStore: settingsStoreForHydration } = await import('../lib/stores/settings.store')
     
     // Inject styles into shadow DOM
     // The CSS is built as style.css in dist root by Vite during content build
@@ -732,22 +841,22 @@ async function createOverlay(cfg: OverlayConfig) {
         log.log('Pre-hydrating stores...')
         
         // IMPORTANT: Import stores BEFORE React components to ensure .persist is attached
-        const { usePersonalityStore } = await import('../lib/stores/personality.store')
-        const { useSettingsStore } = await import('../lib/stores/settings.store')
-        
+        const { usePersonalityStore: personalityStore } = await import('../lib/stores/personality.store')
+        const { useSettingsStore: settingsStore } = await import('../lib/stores/settings.store')
+
         // Explicitly hydrate all persisted stores before first render
         // rehydrate() resolves only after chrome.storage.local.get completes
         await Promise.all([
-          usePersonalityStore.persist.rehydrate(),
-          useSettingsStore.persist.rehydrate(),
+          personalityStore.persist.rehydrate(),
+          settingsStore.persist.rehydrate(),
         ])
-        
+
         // Verify stores are actually ready
         log.log('[OK] Stores hydrated')
-        log.log('Personality hydrated?', usePersonalityStore.persist.hasHydrated())
-        log.log('Settings hydrated?', useSettingsStore.persist.hasHydrated())
-        log.log('Personality state:', usePersonalityStore.getState())
-        log.log('Settings state:', useSettingsStore.getState())
+        log.log('Personality hydrated?', personalityStore.persist.hasHydrated())
+        log.log('Settings hydrated?', settingsStore.persist.hasHydrated())
+        log.log('Personality state:', personalityStore.getState())
+        log.log('Settings state:', settingsStore.getState())
 
         // Runtime assertion: Verify React singleton (should always be true with dedupe)
         const ReactTest1 = await import('react')

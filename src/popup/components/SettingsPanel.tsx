@@ -45,6 +45,10 @@ export function SettingsPanel() {
   const ttsSpeed = useSettingsStore(s => s.ttsSpeed)
   const setTTSSpeed = useSettingsStore(s => s.setTTSSpeed)
 
+  // STT settings (speech-to-text)
+  const sttEnabled = useSettingsStore(s => s.sttEnabled)
+  const setSTTEnabled = useSettingsStore(s => s.setSTTEnabled)
+
   // Hub settings (required for API access)
   const hubUrl = useSettingsStore((s) => s.hubUrl)
   const setHubUrl = useSettingsStore((s) => s.setHubUrl)
@@ -727,6 +731,37 @@ export function SettingsPanel() {
                 </p>
               </div>
             )}
+
+            {/* STT Enable Toggle */}
+            <div className="flex flex-col gap-3 p-3 rounded-lg border border-white/15 bg-white/5">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <label className="text-sm font-medium text-white">
+                    Speech-to-Text
+                  </label>
+                  <p className="text-xs text-white/50 mt-0.5">
+                    Hold mic button to record voice
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSTTEnabled(!sttEnabled)}
+                  className={cn(
+                    "px-4 py-2 text-xs font-bold rounded-lg transition-all duration-200",
+                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40",
+                    sttEnabled
+                      ? "bg-white/90 text-mono-900 hover:bg-white shadow-md"
+                      : "bg-white/15 text-white/70 hover:bg-white/25"
+                  )}
+                >
+                  {sttEnabled ? 'Enabled' : 'Disabled'}
+                </button>
+              </div>
+              {sttEnabled && (
+                <p className="text-xs text-white/40">
+                  Requires microphone permission. Powered by ElevenLabs via Hub.
+                </p>
+              )}
+            </div>
           </>
         )}
 
