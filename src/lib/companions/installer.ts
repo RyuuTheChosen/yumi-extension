@@ -1,11 +1,14 @@
 /**
  * Companion Installer
  *
- * Downloads companion packages from the Hub API, verifies checksums,
+ * Downloads companion packages from the Hub API, verifies checksums and signatures,
  * extracts files, and stores them in IndexedDB.
  */
 
 import JSZip from 'jszip'
+import { createLogger } from '../debug'
+
+const log = createLogger('CompanionInstaller')
 import {
   saveCompanionMetadata,
   saveCompanionFile,
@@ -19,6 +22,7 @@ import {
   type CompanionManifest,
   type CompanionPersonality,
 } from './types'
+import { verifyCompanionPackage } from './verification'
 
 // Installation progress callback
 export interface InstallProgress {
@@ -93,7 +97,8 @@ export async function installCompanion(
   downloadUrl: string,
   expectedChecksum: string,
   onProgress?: ProgressCallback,
-  forceReinstall: boolean = false
+  forceReinstall: boolean = false,
+  packageSignature?: string | null
 ): Promise<StoredCompanion> {
   const report = (stage: InstallProgress['stage'], progress: number, message: string, error?: string) => {
     onProgress?.({ stage, progress, message, error })
@@ -102,7 +107,7 @@ export async function installCompanion(
   // Check for duplicate installation
   const existingStatus = await checkInstalledVersion(slug, expectedChecksum)
   if (existingStatus.installed && existingStatus.sameVersion && !forceReinstall) {
-    console.log(`[Installer] Companion ${slug} already installed with same version, skipping download`)
+    log.log(`Companion ${slug} already installed with same version, skipping download`)
     // Return the existing companion data
     const existing = await getCompanionMetadata(slug)
     if (existing) {
@@ -112,7 +117,7 @@ export async function installCompanion(
   }
 
   if (existingStatus.installed && !existingStatus.sameVersion) {
-    console.log(`[Installer] Updating companion ${slug} from v${existingStatus.currentVersion}`)
+    log.log(`Updating companion ${slug} from v${existingStatus.currentVersion}`)
   }
 
   // Create abort controller for timeout
@@ -143,7 +148,7 @@ export async function installCompanion(
       if (headError instanceof Error && headError.name === 'AbortError') {
         throw new Error('Download timed out. Please check your connection and try again.')
       }
-      console.warn('[Installer] HEAD request failed, continuing with GET:', headError)
+      log.warn('HEAD request failed, continuing with GET:', headError)
     }
 
     const response = await fetch(downloadUrl, {
@@ -201,12 +206,20 @@ export async function installCompanion(
 
     report('downloading', 30, `Downloaded ${Math.round(receivedLength / 1024)}KB`)
 
-    // Stage 2: Verify checksum
+    // Stage 2: Verify checksum and signature
     report('verifying', 35, 'Verifying checksum...')
 
     const actualChecksum = await calculateChecksum(packageBuffer.buffer)
     if (actualChecksum !== expectedChecksum) {
       throw new Error(`Checksum mismatch: expected ${expectedChecksum.slice(0, 8)}..., got ${actualChecksum.slice(0, 8)}...`)
+    }
+
+    // Verify package signature (if signing is enabled)
+    report('verifying', 38, 'Verifying package signature...')
+    try {
+      await verifyCompanionPackage(packageBuffer, packageSignature)
+    } catch (signatureError) {
+      throw new Error(`Package verification failed: ${signatureError instanceof Error ? signatureError.message : 'Unknown error'}`)
     }
 
     report('verifying', 40, 'Checksum verified')
@@ -276,7 +289,7 @@ export async function installCompanion(
 
     report('complete', 100, `Installed ${manifest.name}`)
 
-    console.log(`[Installer] Successfully installed companion: ${slug}`)
+    log.log(`Successfully installed companion: ${slug}`)
     return companion
 
   } catch (error) {
@@ -313,7 +326,7 @@ export async function installCompanion(
  */
 export async function uninstallCompanion(slug: string): Promise<void> {
   await deleteCompanion(slug)
-  console.log(`[Installer] Uninstalled companion: ${slug}`)
+  log.log(`Uninstalled companion: ${slug}`)
 }
 
 /**

@@ -8,6 +8,9 @@ import {
   assembleSystemPrompt,
   DEFAULT_PERSONALITY,
 } from '../personality'
+import { createLogger } from '../debug'
+
+const log = createLogger('Personality')
 
 const MAX_PERSONALITIES = 12
 
@@ -162,20 +165,20 @@ export const usePersonalityStore = create<PersonalityState>()(
         return persistedState as any
       },
       onRehydrateStorage: (state) => {
-        console.log('[Personality Store] Hydration starts')
+        log.log('Hydration starts')
         return (state, error) => {
           if (error) {
-            console.error('[Personality Store] Hydration failed:', error)
+            log.error('Hydration failed:', error)
             return
           }
-          
-          console.log('[Personality Store] Hydration finished successfully')
-          
+
+          log.log('Hydration finished successfully')
+
           // Ensure safe defaults if storage is empty or corrupted
           if (!state) return
           if (!Array.isArray(state.list)) state.list = []
           if (typeof state.activeId !== 'string') state.activeId = null
-          
+
           // If no personalities exist, create default
           if (state.list.length === 0) {
             const defaultPersonality = createPersonality({
@@ -186,10 +189,10 @@ export const usePersonalityStore = create<PersonalityState>()(
             })
             state.list = [defaultPersonality]
             state.activeId = defaultPersonality.id
-            console.log('[Personality Store] Created default personality')
+            log.log('Created default personality')
           }
-          
-          console.log('[Personality Store] State validation:', {
+
+          log.log('State validation:', {
             hasPersonalities: state.list.length > 0,
             activeId: state.activeId
           })
@@ -203,6 +206,6 @@ export const usePersonalityStore = create<PersonalityState>()(
 if (typeof window !== 'undefined') {
   ;(window as any).resetYumiPersonality = () => {
     usePersonalityStore.getState().resetToDefault()
-    console.log('✅ Yumi personality reset to latest default!')
+    log.log('✅ Yumi personality reset to latest default!')
   }
 }

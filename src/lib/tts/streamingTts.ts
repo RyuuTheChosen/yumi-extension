@@ -11,6 +11,9 @@ import type {
   StreamingTTSInMessage,
   StreamingTTSState,
 } from './types'
+import { createLogger } from '../debug'
+
+const log = createLogger('StreamingTTS')
 
 type StateChangeCallback = (state: StreamingTTSState) => void
 type AudioEndCallback = () => void
@@ -49,6 +52,7 @@ export function extractCompleteSentences(buffer: string): {
 }
 
 export class StreamingTTSService {
+  private static readonly MAX_QUEUE_SIZE = 10
   private ws: WebSocket | null = null
   private audioContext: AudioContext | null = null
   private audioQueue: ArrayBuffer[] = []
@@ -132,7 +136,7 @@ export class StreamingTTSService {
       this.ws = new WebSocket(wsUrl)
 
       this.ws.onopen = () => {
-        console.log('[StreamingTTS] WebSocket connected')
+        log.log('WebSocket connected')
 
         // Send init message
         const initMsg: StreamingTTSOutMessage = {
@@ -148,18 +152,18 @@ export class StreamingTTSService {
           const message: StreamingTTSInMessage = JSON.parse(event.data)
           this.handleMessage(message, resolve)
         } catch (err) {
-          console.error('[StreamingTTS] Error parsing message:', err)
+          log.error('Error parsing message:', err)
         }
       }
 
       this.ws.onerror = (event) => {
-        console.error('[StreamingTTS] WebSocket error:', event)
+        log.error('WebSocket error:', event)
         this.setState('error')
         resolve(false)
       }
 
       this.ws.onclose = () => {
-        console.log('[StreamingTTS] WebSocket closed')
+        log.log('WebSocket closed')
         this.setState('disconnected')
         this.ws = null
       }
@@ -175,18 +179,18 @@ export class StreamingTTSService {
   ): void {
     switch (message.type) {
       case 'ready':
-        console.log('[StreamingTTS] Ready to stream')
+        log.log('Ready to stream')
         this.setState('connected')
         connectResolve?.(true)
         break
 
       case 'audio':
-        console.log('[StreamingTTS] Received audio chunk')
+        log.log('Received audio chunk')
         this.handleAudioChunk(message.audio)
         break
 
       case 'done':
-        console.log('[StreamingTTS] Server signaled stream complete')
+        log.log('Server signaled stream complete')
         this.streamDone = true
         // If queue is already empty, signal audio end now
         if (!this.isPlaying && this.audioQueue.length === 0) {
@@ -195,7 +199,7 @@ export class StreamingTTSService {
         break
 
       case 'error':
-        console.error('[StreamingTTS] Server error:', message.message)
+        log.error('Server error:', message.message)
         this.setState('error')
         break
 
@@ -218,6 +222,12 @@ export class StreamingTTSService {
       }
       const audioData = bytes.buffer
 
+      // Enforce queue size limit to prevent memory buildup
+      if (this.audioQueue.length >= StreamingTTSService.MAX_QUEUE_SIZE) {
+        log.warn('Audio queue full, dropping oldest chunk')
+        this.audioQueue.shift()
+      }
+
       // Add to queue
       this.audioQueue.push(audioData)
 
@@ -226,7 +236,7 @@ export class StreamingTTSService {
         this.playNextChunk()
       }
     } catch (err) {
-      console.error('[StreamingTTS] Error processing audio chunk:', err)
+      log.error('Error processing audio chunk:', err)
     }
   }
 
@@ -270,7 +280,7 @@ export class StreamingTTSService {
         this.playNextChunk()
       }
     } catch (err) {
-      console.error('[StreamingTTS] Error playing audio chunk:', err)
+      log.error('Error playing audio chunk:', err)
       // Try next chunk
       this.playNextChunk()
     }
@@ -281,7 +291,7 @@ export class StreamingTTSService {
    */
   sendText(text: string, flush = false): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      console.warn('[StreamingTTS] Cannot send text: not connected')
+      log.warn('Cannot send text: not connected')
       return
     }
 
@@ -289,7 +299,7 @@ export class StreamingTTSService {
       return
     }
 
-    console.log(`[StreamingTTS] Sending: "${text.slice(0, 50)}${text.length > 50 ? '...' : ''}"${flush ? ' (flush)' : ''}`)
+    log.log(`Sending: "${text.slice(0, 50)}${text.length > 50 ? '...' : ''}"${flush ? ' (flush)' : ''}`)
 
     const msg: StreamingTTSOutMessage = {
       type: 'text',
@@ -375,7 +385,7 @@ export class StreamingTTSService {
       try {
         callback(state)
       } catch (err) {
-        console.error('[StreamingTTS] State callback error:', err)
+        log.error('State callback error:', err)
       }
     }
   }

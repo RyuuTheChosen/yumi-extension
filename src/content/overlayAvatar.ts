@@ -39,6 +39,35 @@ const BASE_WIDTH = AVATAR.baseWidth
 const BASE_HEIGHT = AVATAR.baseHeight
 const PADDING = AVATAR.padding
 
+/**
+ * Timer tracking for memory leak prevention
+ * All setTimeout/setInterval calls must be tracked and cleared on unmount
+ */
+const activeTimers = new Set<ReturnType<typeof setTimeout>>()
+const activeIntervals = new Set<ReturnType<typeof setInterval>>()
+
+function trackTimeout(callback: () => void, ms: number): ReturnType<typeof setTimeout> {
+  const id = setTimeout(() => {
+    activeTimers.delete(id)
+    callback()
+  }, ms)
+  activeTimers.add(id)
+  return id
+}
+
+function trackInterval(callback: () => void, ms: number): ReturnType<typeof setInterval> {
+  const id = setInterval(callback, ms)
+  activeIntervals.add(id)
+  return id
+}
+
+function clearAllTimers() {
+  activeTimers.forEach(id => clearTimeout(id))
+  activeTimers.clear()
+  activeIntervals.forEach(id => clearInterval(id))
+  activeIntervals.clear()
+}
+
 // Configuration pulled via message (so we don't need storage permissions here)
 interface OverlayConfig {
   modelUrl: string
@@ -458,6 +487,7 @@ async function createOverlay(cfg: OverlayConfig) {
     micRecording = false
     if (micDurationInterval) {
       clearInterval(micDurationInterval)
+      activeIntervals.delete(micDurationInterval)
       micDurationInterval = null
     }
     micBtn.style.background = 'rgba(255, 255, 255, 0.1)'
@@ -469,7 +499,7 @@ async function createOverlay(cfg: OverlayConfig) {
   const showError = () => {
     micBtn.style.background = 'rgba(239, 68, 68, 0.8)'
     micBtn.textContent = '!'
-    setTimeout(resetMicButton, 1500)
+    trackTimeout(resetMicButton, 1500)
   }
 
   micBtn.onmouseenter = () => {
@@ -500,7 +530,7 @@ async function createOverlay(cfg: OverlayConfig) {
       micBtn.style.transform = 'scale(1.1)'
       micBtn.style.boxShadow = '0 0 12px rgba(239, 68, 68, 0.5)'
       micBtn.textContent = '0s'
-      micDurationInterval = setInterval(() => {
+      micDurationInterval = trackInterval(() => {
         const duration = Math.floor(sttService.getRecordingDuration() / 1000)
         micBtn.textContent = `${duration}s`
       }, 100)
@@ -510,6 +540,7 @@ async function createOverlay(cfg: OverlayConfig) {
     if (!micRecording) return
     if (micDurationInterval) {
       clearInterval(micDurationInterval)
+      activeIntervals.delete(micDurationInterval)
       micDurationInterval = null
     }
     micBtn.textContent = '...'
@@ -921,9 +952,9 @@ function destroyOverlay() {
     avatarContainer.style.transform = 'scale(0.8)'
     avatarContainer.style.transition = 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)'
   }
-  
+
   // Wait for animation to complete before cleanup
-  setTimeout(() => {
+  trackTimeout(() => {
     model?.destroy()
     app?.destroy(true)
     if (container?.isConnected) container.remove()
@@ -932,7 +963,10 @@ function destroyOverlay() {
     model = null
     avatarContainer = null
   }, 300)
-  
+
+  // Clear all tracked timers to prevent memory leaks
+  clearAllTimers()
+
   // Prevent further interactions during exit
   if (container) {
     container.style.pointerEvents = 'none'
@@ -1324,7 +1358,7 @@ if (typeof window !== 'undefined') {
           // Skip
         }
       }
-      console.table(result)
+      log.log('Model parameters:', result)
       return result
     }
   }

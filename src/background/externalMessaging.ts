@@ -12,6 +12,9 @@ import {
   uninstallCompanion,
 } from '../lib/companions'
 import { useSettingsStore } from '../lib/stores/settings.store'
+import { createLogger } from '../lib/debug'
+
+const log = createLogger('ExternalMessaging')
 
 // Allowed origins for external messaging
 const ALLOWED_ORIGINS = [
@@ -127,11 +130,11 @@ async function handleExternalMessage(
 
   // Validate origin
   if (!isAllowedOrigin(origin)) {
-    console.warn(`[ExternalMessaging] Rejected message from unauthorized origin: ${origin}`)
+    log.warn(`Rejected message from unauthorized origin: ${origin}`)
     return { type: 'YUMI_ERROR', error: 'Unauthorized origin' }
   }
 
-  console.log(`[ExternalMessaging] Received ${message.type} from ${origin}`)
+  log.log(`Received ${message.type} from ${origin}`)
 
   try {
     switch (message.type) {
@@ -174,7 +177,7 @@ async function handleExternalMessage(
 
           // If download URL not provided, fetch from Hub API
           if (!downloadUrl || !checksum) {
-            console.log(`[ExternalMessaging] Fetching download URL for ${payload.slug}`)
+            log.log(`Fetching download URL for ${payload.slug}`)
             const downloadInfo = await fetchDownloadUrl(payload.slug)
             downloadUrl = downloadInfo.downloadUrl
             checksum = downloadInfo.checksum
@@ -210,7 +213,7 @@ async function handleExternalMessage(
           // If uninstalled companion was the active one, reset to bundled default
           const { activeCompanionSlug, setActiveCompanionSlug } = useSettingsStore.getState()
           if (activeCompanionSlug === slug) {
-            console.log(`[ExternalMessaging] Resetting active companion from ${slug} to yumi (bundled)`)
+            log.log(`Resetting active companion from ${slug} to yumi (bundled)`)
             setActiveCompanionSlug('yumi')
 
             // Notify all tabs to remount with the new companion
@@ -265,7 +268,7 @@ async function handleExternalMessage(
         }
     }
   } catch (error) {
-    console.error('[ExternalMessaging] Error handling message:', error)
+    log.error('Error handling message:', error)
     return {
       type: 'YUMI_ERROR',
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -284,7 +287,7 @@ export function setupExternalMessaging(): void {
       handleExternalMessage(message, sender)
         .then(sendResponse)
         .catch(error => {
-          console.error('[ExternalMessaging] Unhandled error:', error)
+          log.error('Unhandled error:', error)
           sendResponse({
             type: 'YUMI_ERROR',
             error: 'Internal error',
@@ -296,7 +299,7 @@ export function setupExternalMessaging(): void {
     }
   )
 
-  console.log('[ExternalMessaging] External messaging listener registered')
+  log.log('External messaging listener registered')
 }
 
 /**
@@ -318,8 +321,8 @@ async function notifyCompanionChanged(newSlug: string): Promise<void> {
         }
       }
     }
-    console.log(`[ExternalMessaging] Notified ${tabs.length} tabs of companion change to ${newSlug}`)
+    log.log(`Notified ${tabs.length} tabs of companion change to ${newSlug}`)
   } catch (error) {
-    console.error('[ExternalMessaging] Failed to notify tabs:', error)
+    log.error('Failed to notify tabs:', error)
   }
 }

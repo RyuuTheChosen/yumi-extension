@@ -162,14 +162,7 @@ export function retrieveRelevantMemories(
 
   scored.sort((a, b) => b.relevance - a.relevance)
 
-  // Log top matches for debugging (only in development)
-  if (scored.length > 0 && context.currentMessage) {
-    console.log('[Memory] Top relevance scores:', scored.slice(0, 5).map(s => ({
-      content: s.memory.content.slice(0, 40) + '...',
-      score: s.relevance.toFixed(3),
-      type: s.memory.type,
-    })))
-  }
+  // Relevance scoring complete
 
   return scored.slice(0, limit).map(({ memory }) => memory)
 }

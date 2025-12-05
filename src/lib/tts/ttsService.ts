@@ -6,6 +6,9 @@
 
 import type { TTSSettings, TTSEvent, TTSPlaybackState } from './types'
 import { DEFAULT_TTS_SETTINGS } from './types'
+import { createLogger } from '../debug'
+
+const log = createLogger('TTS')
 
 type TTSEventCallback = (event: TTSEvent) => void
 
@@ -29,7 +32,7 @@ class TTSService {
       this.settings = { ...this.settings, ...settings }
     }
 
-    console.log('[TTS] Initialized with Hub API')
+    log.log('Initialized with Hub API')
   }
 
   /**
@@ -37,7 +40,7 @@ class TTSService {
    */
   updateSettings(settings: Partial<TTSSettings>): void {
     this.settings = { ...this.settings, ...settings }
-    console.log('[TTS] Settings updated:', this.settings)
+    log.log('Settings updated:', this.settings)
   }
 
   /**
@@ -64,7 +67,7 @@ class TTSService {
    */
   async speak(text: string): Promise<void> {
     if (!this.settings.enabled) {
-      console.log('[TTS] Disabled, skipping speech')
+      log.log('Disabled, skipping speech')
       return
     }
 
@@ -73,14 +76,14 @@ class TTSService {
     }
 
     if (!this.hubUrl || !this.hubAccessToken) {
-      console.warn('[TTS] Hub credentials not set')
+      log.warn('Hub credentials not set')
       return
     }
 
     // Stop any current playback
     this.stop()
 
-    console.log('[TTS] Requesting speech from Hub...')
+    log.log('Requesting speech from Hub...')
     this.emit({ type: 'speaking:start', text })
 
     try {
@@ -110,10 +113,10 @@ class TTSService {
       await this.playAudioBlob(audioBlob, text)
     } catch (err) {
       if ((err as Error).name === 'AbortError') {
-        console.log('[TTS] Request aborted')
+        log.log('Request aborted')
         return
       }
-      console.error('[TTS] Error:', err)
+      log.error('Error:', err)
       this.emit({ type: 'speaking:error', error: (err as Error).message })
     }
   }
@@ -161,7 +164,7 @@ class TTSService {
       if (connectAndPlay && typeof connectAndPlay === 'function') {
         connectAndPlay(this.audioElement, this.settings.voice)
           .catch((err: Error) => {
-            console.error('[TTS] Lip sync connection failed:', err)
+            log.error('Lip sync connection failed:', err)
             this.audioElement?.play()
           })
       } else {
@@ -182,7 +185,7 @@ class TTSService {
 
     this.cleanupAudio()
     this.emit({ type: 'speaking:end' })
-    console.log('[TTS] Stopped')
+    log.log('Stopped')
   }
 
   /**
@@ -216,7 +219,7 @@ class TTSService {
       try {
         listener(event)
       } catch (e) {
-        console.error('[TTS] Event listener error:', e)
+        log.error('Event listener error:', e)
       }
     }
   }
@@ -227,7 +230,7 @@ class TTSService {
   destroy(): void {
     this.stop()
     this.eventListeners.clear()
-    console.log('[TTS] Service destroyed')
+    log.log('Service destroyed')
   }
 }
 

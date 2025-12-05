@@ -1,5 +1,8 @@
 import type { STTSettings, STTEvent, STTState } from './types'
 import { DEFAULT_STT_SETTINGS } from './types'
+import { createLogger } from '../debug'
+
+const log = createLogger('STT')
 
 type STTEventCallback = (event: STTEvent) => void
 
@@ -33,7 +36,7 @@ class STTService {
       this.settings = { ...this.settings, ...settings }
     }
 
-    console.log('[STT] Initialized with Hub API')
+    log.log('Initialized with Hub API')
   }
 
   updateSettings(settings: Partial<STTSettings>): void {
@@ -61,7 +64,7 @@ class STTService {
     }
 
     if (this.state !== 'idle') {
-      console.warn('[STT] Already recording or transcribing')
+      log.warn('Already recording or transcribing')
       return false
     }
 
@@ -89,10 +92,10 @@ class STTService {
         }
       }, MAX_RECORDING_DURATION)
 
-      console.log('[STT] Recording started')
+      log.log('Recording started')
       return true
     } catch (err) {
-      console.error('[STT] Failed to start recording:', err)
+      log.error('Failed to start recording:', err)
       const errorMessage = this.getPermissionErrorMessage(err)
       this.emit({ type: 'transcription:error', error: errorMessage })
       this.state = 'idle'
@@ -122,7 +125,7 @@ class STTService {
         const audioBlob = new Blob(this.audioChunks, { type: mimeType })
         this.audioChunks = []
 
-        console.log(`[STT] Recorded ${audioBlob.size} bytes in ${recordingDuration}ms`)
+        log.log(`Recorded ${audioBlob.size} bytes in ${recordingDuration}ms`)
 
         if (recordingDuration < MIN_RECORDING_DURATION || audioBlob.size < 1000) {
           this.emit({ type: 'transcription:error', error: 'Hold longer to record' })
@@ -137,7 +140,7 @@ class STTService {
           this.state = 'idle'
           resolve(text)
         } catch (err) {
-          console.error('[STT] Transcription failed:', err)
+          log.error('Transcription failed:', err)
           this.emit({ type: 'transcription:error', error: (err as Error).message })
           this.state = 'idle'
           resolve(null)
@@ -159,7 +162,7 @@ class STTService {
       this.state = 'idle'
       this.recordingStartTime = 0
       this.emit({ type: 'recording:stop' })
-      console.log('[STT] Recording cancelled')
+      log.log('Recording cancelled')
     }
   }
 
@@ -173,7 +176,7 @@ class STTService {
       try {
         listener(event)
       } catch (e) {
-        console.error('[STT] Event listener error:', e)
+        log.error('Event listener error:', e)
       }
     }
   }

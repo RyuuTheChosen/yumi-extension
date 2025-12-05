@@ -1,0 +1,20 @@
+{
+  "id": "my-companion",
+  "name": "My Companion",
+  "version": "1.0.0",
+  "description": "A brief description of your companion's personality and purpose.",
+  "author": "Your Name",
+  "preview": "preview.png",
+  "model": {
+    "entry": "model/model.model3.json",
+    "scale": 0.15,
+    "position": "bottom-right"
+  },
+  "personality": "personality.json",
+  "tags": [
+    "friendly",
+    "helpful"
+  ],
+  "createdAt": "2025-01-01",
+  "updatedAt": "2025-01-01"
+}

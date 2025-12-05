@@ -1,11 +1,42 @@
 import { extractMainContent } from './extract'
-import { mountOverlay, unmountOverlay, updateOverlayConfig } from './overlayAvatar'
 import { bus } from '../lib/bus'
 import { createLogger } from '../lib/debug'
 import { detectPageType } from '../lib/memory'
+import { getActiveCompanion } from '../lib/companions/loader'
 
 const log = createLogger('Content')
-import { getActiveCompanion } from '../lib/companions/loader'
+
+// Lazy-loaded avatar module (300KB+ bundle only loaded when needed)
+let overlayModule: typeof import('./overlayAvatar') | null = null
+
+async function getOverlayModule() {
+	if (!overlayModule) {
+		log.log('Loading avatar bundle...')
+		overlayModule = await import('./overlayAvatar')
+		log.log('Avatar bundle loaded')
+	}
+	return overlayModule
+}
+
+async function mountOverlay(config: Parameters<typeof import('./overlayAvatar').mountOverlay>[0]) {
+	const mod = await getOverlayModule()
+	mod.mountOverlay(config)
+}
+
+async function unmountOverlay() {
+	// Only unmount if module was loaded (avoid loading just to unmount)
+	if (overlayModule) {
+		overlayModule.unmountOverlay()
+	}
+}
+
+function updateOverlayConfig(config: Parameters<typeof import('./overlayAvatar').updateOverlayConfig>[0]): boolean {
+	// Only update if module was loaded (sync check for lightweight updates)
+	if (overlayModule) {
+		return overlayModule.updateOverlayConfig(config)
+	}
+	return false
+}
 import './visionAbilities' // Initialize vision abilities
 import './contextMenuHandler' // Initialize context menu handling
 

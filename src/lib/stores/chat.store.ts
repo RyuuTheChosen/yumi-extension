@@ -72,7 +72,7 @@ export const useChatStore = create<ChatStore>()(
         try {
           usePersonalityStore.getState().resetToDefault()
         } catch (e) {
-          console.warn('Failed to reset personality:', e)
+          // Silent failure - personality reset is optional
         }
         set({ messages: [], status: 'idle', error: null, requestId: undefined, attempt: 0 })
       },

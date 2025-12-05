@@ -19,6 +19,10 @@
  * @date November 13, 2025
  */
 
+import { createLogger } from '../lib/debug'
+
+const log = createLogger('LipSync')
+
 // ============================================================================
 // Type Definitions
 // ============================================================================
@@ -186,8 +190,8 @@ export class LipSyncController {
     // Allocate frequency data buffer
     this.data = new Uint8Array(this.analyser.frequencyBinCount)
     
-    console.log('[LipSync] Controller initialized')
-    console.log(`[LipSync] FFT size: ${this.analyser.fftSize}, Bins: ${this.analyser.frequencyBinCount}`)
+    log.log(' Controller initialized')
+    log.log(` FFT size: ${this.analyser.fftSize}, Bins: ${this.analyser.frequencyBinCount}`)
 
     // Load persisted voice presets (fire and forget)
     this.loadPersistedPresets()
@@ -213,7 +217,7 @@ export class LipSyncController {
    */
   connectSource(source: MediaElementAudioSourceNode | AudioBufferSourceNode): void {
     source.connect(this.mixBus)
-    console.log('[LipSync] Audio source connected')
+    log.log(' Audio source connected')
   }
   
   /**
@@ -223,7 +227,7 @@ export class LipSyncController {
    */
   connectAnalyserToDestination(): void {
     this.analyser.connect(this.ctx.destination)
-    console.log('[LipSync] Analyser connected to destination')
+    log.log(' Analyser connected to destination')
   }
   
   /**
@@ -257,7 +261,7 @@ export class LipSyncController {
     // Start auto-calibration
     this.startCalibration()
     
-    console.log(`[LipSync] Started (voice: ${this.currentVoice})`)
+    log.log(` Started (voice: ${this.currentVoice})`)
   }
   
   /**
@@ -275,7 +279,7 @@ export class LipSyncController {
    */
   stop(): void {
     this.speaking = false
-    console.log('[LipSync] Stopped (envelope will decay)')
+    log.log(' Stopped (envelope will decay)')
   }
   
   /**
@@ -400,7 +404,7 @@ export class LipSyncController {
    */
   setGate(db: number): void {
     this.gateDb = db
-    console.log(`[LipSync] Gate set to ${db}dB`)
+    log.log(` Gate set to ${db}dB`)
   }
   
   /**
@@ -411,7 +415,7 @@ export class LipSyncController {
    */
   setSpeakingLevel(db: number): void {
     this.openDb = db
-    console.log(`[LipSync] Speaking level set to ${db}dB`)
+    log.log(` Speaking level set to ${db}dB`)
   }
   
   /**
@@ -423,7 +427,7 @@ export class LipSyncController {
     this.mixBus.disconnect()
     this.speaking = false
     this.envelope = 0
-    console.log('[LipSync] Controller destroyed')
+    log.log(' Controller destroyed')
   }
   
   // ========================================================================
@@ -475,7 +479,7 @@ export class LipSyncController {
   private startCalibration(): void {
     this.calibrating = true
     this.calibrationSamples = []
-    console.log('[LipSync] Starting auto-calibration...')
+    log.log(' Starting auto-calibration...')
   }
   
   /**
@@ -489,7 +493,7 @@ export class LipSyncController {
     const peakDb = Math.max(...this.calibrationSamples)
     const avgDb = this.calibrationSamples.reduce((a, b) => a + b, 0) / this.calibrationSamples.length
     
-    console.log(`[LipSync] Calibration complete: peak=${peakDb.toFixed(1)}dB, avg=${avgDb.toFixed(1)}dB`)
+    log.log(` Calibration complete: peak=${peakDb.toFixed(1)}dB, avg=${avgDb.toFixed(1)}dB`)
     
     // Only calibrate if we have valid speech signal (not silence)
     if (peakDb > -100) {
@@ -500,7 +504,7 @@ export class LipSyncController {
       // Use average - 5dB to allow some variation before closing
       this.gateDb = Math.min(avgDb - 5, this.openDb - 8)
       
-      console.log(`[LipSync] Set openDb=${this.openDb.toFixed(1)}dB, gateDb=${this.gateDb.toFixed(1)}dB`)
+      log.log(` Set openDb=${this.openDb.toFixed(1)}dB, gateDb=${this.gateDb.toFixed(1)}dB`)
       
       // Save preset for this voice
       this.saveVoicePreset(this.currentVoice, {
@@ -511,7 +515,7 @@ export class LipSyncController {
         avgDb
       })
     } else {
-      console.warn('[LipSync] Calibration failed: signal too weak')
+      log.warn(' Calibration failed: signal too weak')
     }
   }
   
@@ -524,7 +528,7 @@ export class LipSyncController {
    */
   private saveVoicePreset(voiceId: string, preset: VoicePreset): void {
     this.voicePresets.set(voiceId, preset)
-    console.log(`[LipSync] Saved preset for voice: ${voiceId}`)
+    log.log(` Saved preset for voice: ${voiceId}`)
 
     // Persist to chrome.storage.local for cross-session reuse
     this.persistPresets().catch(() => {
@@ -558,7 +562,7 @@ export class LipSyncController {
         this.voicePresets.set(voiceId, preset as VoicePreset)
       }
       if (this.voicePresets.size > 0) {
-        console.log(`[LipSync] Loaded ${this.voicePresets.size} voice presets from storage`)
+        log.log(` Loaded ${this.voicePresets.size} voice presets from storage`)
       }
     } catch (err) {
       // Storage might not be available in all contexts
@@ -578,6 +582,6 @@ export class LipSyncController {
     this.openDb = preset.openDb
     this.maxOpen = preset.maxOpen
     
-    console.log(`[LipSync] Applied preset for voice: ${voiceId}`)
+    log.log(` Applied preset for voice: ${voiceId}`)
   }
 }

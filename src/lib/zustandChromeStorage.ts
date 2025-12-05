@@ -1,6 +1,6 @@
 import type { StateStorage } from 'zustand/middleware'
 
-const DEBOUNCE_MS = 400
+const DEBOUNCE_MS = 100
 const BYTE_LIMIT = 8 * 1024 * 1024 // 8MB safety cap
 
 const timers = new Map<string, number>()
@@ -54,4 +54,16 @@ export const debouncedChromeStorage: StateStorage = {
     pending.delete(key)
     await chrome.storage.local.remove(key)
   },
+}
+
+/**
+ * Immediate write for critical operations (bypasses debounce)
+ * Use for auth tokens, settings that must persist immediately
+ */
+export async function setItemImmediate(key: string, value: string): Promise<void> {
+  pending.set(key, value)
+  const prev = timers.get(key)
+  if (prev) window.clearTimeout(prev)
+  timers.delete(key)
+  await flush(key)
 }

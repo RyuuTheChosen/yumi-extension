@@ -5,6 +5,9 @@ import { getCurrentScope } from '../utils/scopes'
 import { useScopedChatStore } from '../stores/scopedChat.store'
 import type { Message } from '../utils/db'
 import { bubbleManager, type VisionStage } from './FloatingResponseBubble'
+import { createLogger } from '../../lib/debug'
+
+const log = createLogger('ImageUnderstanding')
 
 export class ImageUnderstanding {
   private config: ImageUnderstandingConfig
@@ -28,7 +31,7 @@ export class ImageUnderstanding {
     if (!this.config.enabled) return
     document.addEventListener('click', this.onClick, true) // Capture phase
     chrome.runtime.onMessage.addListener(this.onRuntimeMessage)
-    console.log('[ImageUnderstanding] ✅ Initialized')
+    log.log('✅ Initialized')
   }
 
   private handleClick(e: MouseEvent) {
@@ -58,7 +61,7 @@ export class ImageUnderstanding {
     
     // Prevent duplicate analysis
     if (this.processingImages.has(imgSrc)) {
-      console.log('[ImageUnderstanding] ⏳ Already processing:', imgSrc)
+      log.log('⏳ Already processing:', imgSrc)
       return
     }
     
@@ -66,7 +69,7 @@ export class ImageUnderstanding {
     const lastAnalyzed = this.recentlyAnalyzed.get(imgSrc)
     if (lastAnalyzed && now - lastAnalyzed < this.COOLDOWN_MS) {
       const remaining = Math.ceil((this.COOLDOWN_MS - (now - lastAnalyzed)) / 1000)
-      console.log(`[ImageUnderstanding] ⏱️ Cooldown: ${remaining}s remaining for this image`)
+      log.log(`⏱️ Cooldown: ${remaining}s remaining for this image`)
       this.showIndicator(img, 'cooldown', remaining)
       return
     }
@@ -74,7 +77,7 @@ export class ImageUnderstanding {
     // Check minimum interval between ANY analyses
     if (now - this.lastAnalysisTime < this.MIN_INTERVAL_MS) {
       const remaining = Math.ceil((this.MIN_INTERVAL_MS - (now - this.lastAnalysisTime)) / 1000)
-      console.log(`[ImageUnderstanding] ⏱️ Please wait ${remaining}s before next analysis`)
+      log.log(`⏱️ Please wait ${remaining}s before next analysis`)
       this.showIndicator(img, 'cooldown', remaining)
       return
     }
@@ -82,7 +85,7 @@ export class ImageUnderstanding {
     // Check rate limit (sliding window)
     this.analysisTimestamps = this.analysisTimestamps.filter(t => now - t < 60000)
     if (this.analysisTimestamps.length >= this.MAX_PER_MINUTE) {
-      console.log('[ImageUnderstanding] 🚫 Rate limit: Max 10 analyses per minute')
+      log.log('🚫 Rate limit: Max 10 analyses per minute')
       this.showIndicator(img, 'rate-limited', 0)
       return
     }
@@ -94,7 +97,7 @@ export class ImageUnderstanding {
     this.analysisTimestamps.push(now)
     this.analysisCount++
     
-    console.log(`[ImageUnderstanding] 🔍 Analyzing image (${this.analysisCount} total, ${this.analysisTimestamps.length}/10 this minute):`, imgSrc)
+    log.log(`🔍 Analyzing image (${this.analysisCount} total, ${this.analysisTimestamps.length}/10 this minute):`, imgSrc)
     
     this.showIndicator(img, 'analyzing')
     
@@ -181,7 +184,7 @@ export class ImageUnderstanding {
         }
 
         port.onMessage.addListener(streamListener)
-        console.log('[ImageUnderstanding] Floating bubble created')
+        log.log('Floating bubble created')
       }
       // === END floating bubble ===
       
@@ -216,7 +219,7 @@ export class ImageUnderstanding {
       }, 30000)
       
     } catch (err) {
-      console.error('[ImageUnderstanding] ❌ Analysis failed:', err)
+      log.error('❌ Analysis failed:', err)
       this.showIndicator(img, 'error')
       this.processingImages.delete(imgSrc)
       
@@ -325,6 +328,6 @@ export class ImageUnderstanding {
     this.processingImages.clear()
     this.recentlyAnalyzed.clear()
     this.analysisTimestamps = []
-    console.log(`[ImageUnderstanding] 🧹 Cleaned up (analyzed ${this.analysisCount} images this session)`)
+    log.log(`🧹 Cleaned up (analyzed ${this.analysisCount} images this session)`)
   }
 }

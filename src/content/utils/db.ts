@@ -1,11 +1,14 @@
 /**
  * IndexedDB Storage for Scoped Chat Messages
- * 
+ *
  * Uses native IndexedDB API (no external dependencies)
  * Stores messages per scope with efficient querying
  */
 
 import type { Scope } from './scopes'
+import { createLogger } from '../../lib/debug'
+
+const log = createLogger('DB')
 
 export interface Message {
   id: string
@@ -55,13 +58,13 @@ async function getDB(): Promise<IDBDatabase> {
     const request = indexedDB.open(DB_NAME, DB_VERSION)
 
     request.onerror = () => {
-      console.error('[DB] Failed to open database:', request.error)
+      log.error('Failed to open database:', request.error)
       reject(request.error)
     }
 
     request.onsuccess = () => {
       dbInstance = request.result
-      console.log('[DB] ✅ Database opened')
+      log.log('✅ Database opened')
       resolve(dbInstance)
     }
 
@@ -73,13 +76,13 @@ async function getDB(): Promise<IDBDatabase> {
         const messageStore = db.createObjectStore(MESSAGES_STORE, { keyPath: 'id' })
         messageStore.createIndex('by-scope', 'scopeId', { unique: false })
         messageStore.createIndex('by-timestamp', 'ts', { unique: false })
-        console.log('[DB] ✅ Messages store created')
+        log.log('✅ Messages store created')
       }
 
       // Threads store (metadata only)
       if (!db.objectStoreNames.contains(THREADS_STORE)) {
         db.createObjectStore(THREADS_STORE, { keyPath: 'id' })
-        console.log('[DB] ✅ Threads store created')
+        log.log('✅ Threads store created')
       }
     }
   })
@@ -105,7 +108,7 @@ export async function getThreadMessages(scopeId: string): Promise<Message[]> {
     }
 
     request.onerror = () => {
-      console.error('[DB] Failed to get messages:', request.error)
+      log.error('Failed to get messages:', request.error)
       reject(request.error)
     }
   })
@@ -124,7 +127,7 @@ export async function addMessage(message: Message): Promise<void> {
 
     request.onsuccess = () => resolve()
     request.onerror = () => {
-      console.error('[DB] Failed to add message:', request.error)
+      log.error('Failed to add message:', request.error)
       reject(request.error)
     }
   })
@@ -143,7 +146,7 @@ export async function updateMessage(message: Message): Promise<void> {
 
     request.onsuccess = () => resolve()
     request.onerror = () => {
-      console.error('[DB] Failed to update message:', request.error)
+      log.error('Failed to update message:', request.error)
       reject(request.error)
     }
   })
@@ -162,7 +165,7 @@ export async function deleteMessage(messageId: string): Promise<void> {
 
     request.onsuccess = () => resolve()
     request.onerror = () => {
-      console.error('[DB] Failed to delete message:', request.error)
+      log.error('Failed to delete message:', request.error)
       reject(request.error)
     }
   })
@@ -199,8 +202,8 @@ export async function pruneOldMessages(
   for (const msg of toDelete) {
     await deleteMessage(msg.id)
   }
-  
-  console.log(`[DB] Pruned ${toDelete.length} messages from scope ${scopeId}`)
+
+  log.log(`Pruned ${toDelete.length} messages from scope ${scopeId}`)
   return toDelete.length
 }
 
@@ -217,7 +220,7 @@ export async function getThread(threadId: string): Promise<Thread | null> {
 
     request.onsuccess = () => resolve(request.result || null)
     request.onerror = () => {
-      console.error('[DB] Failed to get thread:', request.error)
+      log.error('Failed to get thread:', request.error)
       reject(request.error)
     }
   })
@@ -236,7 +239,7 @@ export async function saveThread(thread: Thread): Promise<void> {
 
     request.onsuccess = () => resolve()
     request.onerror = () => {
-      console.error('[DB] Failed to save thread:', request.error)
+      log.error('Failed to save thread:', request.error)
       reject(request.error)
     }
   })
@@ -247,12 +250,12 @@ export async function saveThread(thread: Thread): Promise<void> {
  */
 export async function clearThread(scopeId: string): Promise<void> {
   const messages = await getThreadMessages(scopeId)
-  
+
   for (const msg of messages) {
     await deleteMessage(msg.id)
   }
-  
-  console.log(`[DB] Cleared ${messages.length} messages from scope ${scopeId}`)
+
+  log.log(`Cleared ${messages.length} messages from scope ${scopeId}`)
 }
 
 /**
@@ -274,7 +277,7 @@ export async function getAllThreads(): Promise<Thread[]> {
     }
 
     request.onerror = () => {
-      console.error('[DB] Failed to get threads:', request.error)
+      log.error('Failed to get threads:', request.error)
       reject(request.error)
     }
   })

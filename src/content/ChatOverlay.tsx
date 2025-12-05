@@ -3,54 +3,38 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { createLogger } from '../lib/debug'
 import { CHAT } from '../lib/design/dimensions'
 import { useScopedChatStore } from './stores/scopedChat.store'
-
-const log = createLogger('ChatOverlay')
 import { usePersonalityStore } from '../lib/stores/personality.store'
 import { useSettingsStore } from '../lib/stores/settings.store'
 import { usePortConnection } from './hooks/usePortConnection'
+import { useTTS } from './hooks/useTTS'
+import { useSTT } from './hooks/useSTT'
+import { useMemoryExtraction } from './hooks/useMemoryExtraction'
+import { useWebSearch } from './hooks/useWebSearch'
+import { useProactiveMemory } from './hooks/useProactiveMemory'
+import { useContextMenu } from './hooks/useContextMenu'
 import { ChatHeader } from './components/ChatHeader'
 import { MessageBubble } from './components/MessageBubble'
 import { MessageInput, type MessageInputHandle } from './components/MessageInput'
 import { EmptyState } from './components/EmptyState'
+import { SearchPrompt } from './components/SearchPrompt'
 import { getThreadMessages } from './utils/db'
 import { setChatOpen } from './chatState'
 import {
   useMemoryStore,
   getMemoriesForPrompt,
-  extractMemoriesFromConversation,
-  shouldExtract,
-  EXTRACTION_CONFIG,
   migrateLocalMemories,
 } from '../lib/memory'
 import { isVisionQuery } from '../lib/context/visionTrigger'
-import { extractPageContext, buildContextForPrompt } from '../lib/context'
-import { ttsService } from '../lib/tts'
-import { StreamingTTSService, extractCompleteSentences } from '../lib/tts/streamingTts'
-import { bus, type PageReadyContext } from '../lib/bus'
-import { getActiveCompanion } from '../lib/companions/loader'
-import {
-  shouldSuggestSearch,
-  extractSearchQuery,
-  performSearch,
-  formatSearchResultsForPrompt,
-  type SearchResult,
-} from '../lib/search'
-import { SearchPrompt } from './components/SearchPrompt'
-import {
-  ProactiveMemoryController,
-  type ProactiveAction,
-  detectPageType,
-} from '../lib/memory'
-import { bubbleManager } from './visionAbilities/FloatingResponseBubble'
-import { isChatOverlayOpen } from './chatState'
-import { getAvatarPosition } from './visionAbilities/utils'
+import { extractPageContext } from '../lib/context'
+import { formatSearchResultsForPrompt, type SearchResult } from '../lib/search'
 
-// Debug panel: only available in development builds
+const log = createLogger('ChatOverlay')
+
 declare const __DEV__: boolean
 const ExpressionDebugPanel = __DEV__
   ? React.lazy(() => import('./components/ExpressionDebugPanel').then(m => ({ default: m.ExpressionDebugPanel })))
   : null
-const SHOW_DEBUG_PANEL = __DEV__ && false // Set to true to enable in dev
+const SHOW_DEBUG_PANEL = __DEV__ && false
 
 interface ChatOverlayProps {
   chatButton?: HTMLButtonElement
@@ -58,27 +42,20 @@ interface ChatOverlayProps {
 }
 
 /**
- * Phase 2: Full chat UI integrated into overlay
- * Scoped conversation threads with port-based streaming and IndexedDB persistence
+ * Chat Overlay Component
+ *
+ * Main chat UI integrated into overlay with scoped conversation threads,
+ * port-based streaming, and IndexedDB persistence.
+ *
+ * Refactored to use custom hooks for TTS, STT, memory extraction,
+ * web search, proactive memory, and context menu integration.
  */
 export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }) => {
   const [isExpanded, setIsExpanded] = useState(false)
   const containerRef = useRef<HTMLDivElement | null>(null)
   const [historyCount, setHistoryCount] = useState(0)
   const [historyLoading, setHistoryLoading] = useState(false)
-
-  // Pre-filled context from context menu (right-click "Ask Yumi about this")
-  const [prefilledContext, setPrefilledContext] = useState<string | null>(null)
-  const [contextSource, setContextSource] = useState<'selection' | 'element' | null>(null)
-
-  // Web search state
-  const [showSearchPrompt, setShowSearchPrompt] = useState(false)
-  const [pendingMessage, setPendingMessage] = useState<string | null>(null)
-  const [searchQuery, setSearchQuery] = useState<string>('')
-  const [isSearching, setIsSearching] = useState(false)
-  const [searchError, setSearchError] = useState<string | null>(null)
-  const [messageSources, setMessageSources] = useState<Map<string, SearchResult[]>>(new Map())
-  const pendingSourcesRef = useRef<SearchResult[] | null>(null)
+  const messageInputRef = useRef<MessageInputHandle | null>(null)
 
   const currentScope = useScopedChatStore(s => s.currentScope)
   const threads = useScopedChatStore(s => s.threads)
@@ -89,8 +66,7 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
   const sendMessageAction = useScopedChatStore(s => s.sendMessage)
   const reloadThread = useScopedChatStore(s => s.reloadThread)
   const privateMode = useScopedChatStore(s => s.privateMode)
-  
-  // Derive display messages with useMemo to avoid calling store methods in selectors
+
   const displayMessages = useMemo(() => {
     const threadMessages = threads.get(currentScope.id) || []
     if (streamingMessage && !threadMessages.find(m => m.id === streamingMessage.id)) {
@@ -98,36 +74,23 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
     }
     return threadMessages
   }, [threads, currentScope.id, streamingMessage])
-  
-  // Personality store (pre-hydrated by overlayAvatar.ts)
+
   const activePersonality = usePersonalityStore(s => {
-    const activeId = s.activeId
-    return s.list.find(p => p.id === activeId)
+    const id = s.activeId
+    return s.list.find(p => p.id === id)
   })
+  const ensureDefaultPersonality = usePersonalityStore(s => s.ensureDefault)
 
-  // Get stable reference to ensureDefault (runs exactly once)
-  const ensureDefaultPersonality = useMemo(() => usePersonalityStore.getState().ensureDefault, [])
-
-  // Memory store
   const memories = useMemoryStore(s => s.memories)
   const memoriesLoaded = useMemoryStore(s => s.isLoaded)
-  const lastExtractionAt = useMemoryStore(s => s.lastExtractionAt)
-  const loadMemories = useMemo(() => useMemoryStore.getState().loadMemories, [])
-  const addMemories = useMemo(() => useMemoryStore.getState().addMemories, [])
-  const setLastExtractionAt = useMemo(() => useMemoryStore.getState().setLastExtractionAt, [])
-  const updateImportance = useMemo(() => useMemoryStore.getState().updateImportance, [])
+  const loadMemories = useMemoryStore(s => s.loadMemories)
 
-  // TTS settings (voice from companion, volume from settings)
   const ttsEnabled = useSettingsStore(s => s.ttsEnabled)
   const ttsVolume = useSettingsStore(s => s.ttsVolume)
   const activeCompanionSlug = useSettingsStore(s => s.activeCompanionSlug)
   const hubUrl = useSettingsStore(s => s.hubUrl)
   const hubAccessToken = useSettingsStore(s => s.hubAccessToken)
 
-  // STT settings
-  const sttEnabled = useSettingsStore(s => s.sttEnabled)
-
-  // Proactive settings
   const proactiveEnabled = useSettingsStore(s => s.proactiveEnabled)
   const proactiveFollowUp = useSettingsStore(s => s.proactiveFollowUp)
   const proactiveContext = useSettingsStore(s => s.proactiveContext)
@@ -136,592 +99,164 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
   const proactiveCooldownMins = useSettingsStore(s => s.proactiveCooldownMins)
   const proactiveMaxPerSession = useSettingsStore(s => s.proactiveMaxPerSession)
 
-  // MessageInput ref for external STT results
-  const messageInputRef = useRef<MessageInputHandle>(null)
+  const { connected, sendViaPort } = usePortConnection()
 
-  // Extraction timer ref
-  const extractionTimerRef = useRef<number | null>(null)
-
-  // Streaming TTS refs
-  const streamingTtsRef = useRef<StreamingTTSService | null>(null)
-  const sentenceBufferRef = useRef<string>('')
-  const streamingTtsFailedRef = useRef<boolean>(false)
-
-  // Proactive system state
-  const [proactiveAction, setProactiveAction] = useState<ProactiveAction | null>(null)
-  const proactiveControllerRef = useRef<ProactiveMemoryController | null>(null)
-  
-  // Port-based streaming connection - emit bus events for streaming TTS
-  const { connected, sendMessage: sendViaPort } = usePortConnection({
-    onChunk: (delta: string) => {
-      bus.emit('stream', delta)
-    },
-  })
-  
-  // Refs for stable callback closures (must be declared before any useEffect/useCallback)
   const statusRef = useRef(status)
   const connectedRef = useRef(connected)
   const sendViaPortRef = useRef(sendViaPort)
   const currentScopeRef = useRef(currentScope)
   const sendMessageActionRef = useRef(sendMessageAction)
 
-  // Connect to native button
+  /**
+   * Custom Hooks Integration
+   */
+  const { streamingTtsRef, streamingTtsFailedRef } = useTTS({
+    enabled: ttsEnabled,
+    volume: ttsVolume,
+    activeCompanionSlug,
+    hubUrl,
+    hubAccessToken,
+    status
+  })
+
+  useSTT({
+    messageInputRef,
+    isExpanded,
+    setIsExpanded,
+    onToggle
+  })
+
+  useMemoryExtraction({
+    status,
+    displayMessages,
+    currentScopeId: currentScope.id,
+    ttsEnabled,
+    streamingTtsFailedRef
+  })
+
+  const {
+    showSearchPrompt,
+    isSearching,
+    searchError,
+    searchQuery,
+    messageSources,
+    pendingSourcesRef,
+    handleSendMessage: handleSendMessageWithSearch,
+    handleSearchConfirm: handleSearchConfirmHook,
+    handleSearchSkip: handleSearchSkipHook,
+    setMessageSources
+  } = useWebSearch({
+    status,
+    displayMessages,
+    statusRef
+  })
+
+  const {
+    proactiveAction,
+    setProactiveAction,
+    showProactiveMessage,
+    handleProactiveEngaged
+  } = useProactiveMemory({
+    enabled: proactiveEnabled,
+    followUpEnabled: proactiveFollowUp,
+    contextMatchEnabled: proactiveContext,
+    randomRecallEnabled: proactiveRandom,
+    welcomeBackEnabled: proactiveWelcomeBack,
+    cooldownMinutes: proactiveCooldownMins,
+    maxPerSession: proactiveMaxPerSession,
+    memoriesLoaded,
+    memories,
+    ttsEnabled,
+    setIsExpanded,
+    onToggle
+  })
+
+  const {
+    prefilledContext,
+    contextSource,
+    setPrefilledContext,
+    setContextSource
+  } = useContextMenu({
+    setIsExpanded,
+    onToggle
+  })
+
+  /**
+   * Connect to native chat button
+   */
   useEffect(() => {
     if (!chatButton) return
 
     const handleClick = () => {
-      setIsExpanded(prev => {
-        const newState = !prev
-        setChatOpen(newState) // Update global state for floating bubble
-        onToggle?.(newState)
-        return newState
-      })
+      const newState = !isExpanded
+      setIsExpanded(newState)
+      setChatOpen(newState)
+      onToggle?.(newState)
     }
 
     chatButton.addEventListener('click', handleClick)
     return () => chatButton.removeEventListener('click', handleClick)
-  }, [chatButton, onToggle])
+  }, [chatButton, isExpanded, onToggle])
 
-  // Ensure a default personality exists on mount
+  /**
+   * Ensure default personality exists
+   */
   useEffect(() => {
     ensureDefaultPersonality()
   }, [ensureDefaultPersonality])
 
-  // Listen for context menu events (right-click "Ask Yumi about this")
-  useEffect(() => {
-    const handleContextEvent = (e: Event) => {
-      const customEvent = e as CustomEvent<{ text: string; source: 'selection' | 'element' }>
-      if (customEvent.detail?.text) {
-        log.log(' Context received:', customEvent.detail.source, customEvent.detail.text.slice(0, 100) + '...')
-        setPrefilledContext(customEvent.detail.text)
-        setContextSource(customEvent.detail.source)
-        // Auto-expand chat when context is loaded
-        setIsExpanded(true)
-        setChatOpen(true)
-        onToggle?.(true)
-      }
-    }
-
-    window.addEventListener('yumi:open-with-context', handleContextEvent)
-    return () => window.removeEventListener('yumi:open-with-context', handleContextEvent)
-  }, [onToggle])
-
-  // Listen for STT results from overlay button
-  useEffect(() => {
-    const handleSTTResult = (e: Event) => {
-      const customEvent = e as CustomEvent<{ text: string }>
-      if (customEvent.detail?.text && messageInputRef.current) {
-        messageInputRef.current.appendText(customEvent.detail.text)
-        // Auto-expand chat when STT result received
-        if (!isExpanded) {
-          setIsExpanded(true)
-          setChatOpen(true)
-          onToggle?.(true)
-        }
-      }
-    }
-
-    document.addEventListener('yumi-stt-result', handleSTTResult)
-    return () => document.removeEventListener('yumi-stt-result', handleSTTResult)
-  }, [isExpanded, onToggle])
-
-  // Migrate and load memories on mount
+  /**
+   * Migrate and load memories on mount
+   */
   useEffect(() => {
     if (!memoriesLoaded) {
-      // First migrate any local page memories to shared extension storage
       migrateLocalMemories()
         .then((count) => {
           if (count > 0) {
-            log.log(` Migrated ${count} memories from local storage`)
+            log.log(`[ChatOverlay] Migrated ${count} memories from local storage`)
           }
           return loadMemories()
         })
         .then(() => {
-          log.log(' Memories loaded')
+          log.log('[ChatOverlay] Memories loaded')
         })
         .catch((err) => {
-          log.error(' Memory load failed:', err)
+          log.error('[ChatOverlay] Memory load failed:', err)
         })
     }
   }, [memoriesLoaded, loadMemories])
 
-  // Initialize proactive controller (only once when memories are loaded)
+  /**
+   * Check for history when chat is cleared
+   */
   useEffect(() => {
-    if (!memoriesLoaded) return
-
-    const controller = new ProactiveMemoryController({
-      enabled: proactiveEnabled,
-      followUpEnabled: proactiveFollowUp,
-      contextMatchEnabled: proactiveContext,
-      randomRecallEnabled: proactiveRandom,
-      welcomeBackEnabled: proactiveWelcomeBack,
-      cooldownMinutes: proactiveCooldownMins,
-      maxPerSession: proactiveMaxPerSession,
-    })
-
-    controller.initialize().then(async () => {
-      proactiveControllerRef.current = controller
-      log.log(' Proactive controller initialized')
-
-      // Check for welcome back or follow-ups on session start
-      if (proactiveEnabled) {
-        const pageContext: PageReadyContext = {
-          url: window.location.href,
-          origin: window.location.origin,
-          title: document.title,
-          pageType: detectPageType(window.location.href, document.title),
-        }
-
-        const action = await controller.getProactiveAction(memories, pageContext, true)
-        if (action) {
-          log.log(' Proactive action on session start:', action.type)
-          setProactiveAction(action)
-        }
-      }
-    })
-
-    return () => {
-      proactiveControllerRef.current = null
-    }
-  // Only re-run when memories are loaded - settings are updated via updateConfig
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [memoriesLoaded])
-
-  // Update controller config when settings change
-  useEffect(() => {
-    if (proactiveControllerRef.current) {
-      proactiveControllerRef.current.updateConfig({
-        enabled: proactiveEnabled,
-        followUpEnabled: proactiveFollowUp,
-        contextMatchEnabled: proactiveContext,
-        randomRecallEnabled: proactiveRandom,
-        welcomeBackEnabled: proactiveWelcomeBack,
-        cooldownMinutes: proactiveCooldownMins,
-        maxPerSession: proactiveMaxPerSession,
-      })
-    }
-  }, [
-    proactiveEnabled,
-    proactiveFollowUp,
-    proactiveContext,
-    proactiveRandom,
-    proactiveWelcomeBack,
-    proactiveCooldownMins,
-    proactiveMaxPerSession,
-  ])
-
-  // Periodic proactive check (every cooldown period)
-  useEffect(() => {
-    if (!proactiveEnabled || !proactiveControllerRef.current) return
-
-    const intervalMs = proactiveCooldownMins * 60 * 1000
-
-    const checkProactive = async () => {
-      if (!proactiveControllerRef.current || proactiveAction) return
-
-      const pageContext: PageReadyContext = {
-        url: window.location.href,
-        origin: window.location.origin,
-        title: document.title,
-        pageType: detectPageType(window.location.href, document.title),
-      }
-
-      const action = await proactiveControllerRef.current.getProactiveAction(memories, pageContext)
-      if (action) {
-        log.log(' Proactive action (periodic):', action.type)
-        setProactiveAction(action)
-      }
-    }
-
-    const interval = setInterval(checkProactive, intervalMs)
-
-    return () => clearInterval(interval)
-  }, [proactiveEnabled, proactiveCooldownMins, proactiveAction, memories])
-
-  useEffect(() => {
-    if (!proactiveAction || !proactiveControllerRef.current) return
-
-    const displayProactive = async () => {
-      proactiveControllerRef.current?.recordProactive(proactiveAction.memory?.id, proactiveAction)
-
-      if (!isChatOverlayOpen()) {
-        const avatarPos = getAvatarPosition()
-        if (avatarPos) {
-          const requestId = `proactive-${Date.now()}`
-          const bubble = bubbleManager.create({
-            position: { x: avatarPos.x, y: avatarPos.y },
-            anchor: 'avatar',
-            autoFadeMs: 15000,
-          }, requestId)
-
-          if (bubble) {
-            bubble.appendChunk(proactiveAction.message)
-            bubble.finalize()
-            log.log(' Proactive bubble displayed:', proactiveAction.type)
-          }
-        }
-      } else {
-        const store = useScopedChatStore.getState()
-        await store.addProactiveMessage(proactiveAction.message)
-        log.log(' Proactive message added to chat:', proactiveAction.type)
-      }
-
-      if (ttsEnabled) {
-        ttsService.speak(proactiveAction.message)
-        bus.emit('avatar', { type: 'speaking:start' })
-      }
-
-      bus.emit('proactive:triggered', {
-        type: proactiveAction.type,
-        message: proactiveAction.message,
-        memoryId: proactiveAction.memory?.id,
-      })
-    }
-
-    displayProactive()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [proactiveAction, ttsEnabled])
-
-  // Initialize TTS service with Hub credentials and companion voice
-  useEffect(() => {
-    if (!ttsEnabled) {
-      log.log(' TTS disabled')
-      return
-    }
-
-    if (!hubUrl || !hubAccessToken) {
-      log.log(' TTS enabled but not logged in to Hub')
-      return
-    }
-
-    // Load companion to get voice from personality
-    const initTTS = async () => {
-      try {
-        const companion = await getActiveCompanion(activeCompanionSlug)
-        const voiceId = companion.personality.voice?.voiceId || 'MEJe6hPrI48Kt2lFuVe3' // Fallback to Yumi
-
-        ttsService.initialize(hubUrl, hubAccessToken, {
-          enabled: ttsEnabled,
-          voice: voiceId,
-          volume: ttsVolume,
+    if (isCleared && displayMessages.length === 0) {
+      setHistoryLoading(true)
+      getThreadMessages(currentScope.id)
+        .then((msgs) => {
+          setHistoryCount(msgs.length)
         })
-        log.log(' TTS initialized with companion voice:', voiceId)
-      } catch (err) {
-        log.error(' Failed to load companion for TTS:', err)
-      }
-    }
-
-    initTTS()
-  }, [ttsEnabled, ttsVolume, activeCompanionSlug, hubUrl, hubAccessToken])
-
-  // Streaming TTS: play audio as text streams in (instead of waiting for full response)
-  useEffect(() => {
-    // Only run when TTS is enabled and we have Hub credentials
-    if (!ttsEnabled || !hubUrl || !hubAccessToken) {
-      return
-    }
-
-    // Track if we're currently using streaming TTS this session
-    let streamUnsubscribe: (() => void) | null = null
-    let currentVoiceId = ''
-
-    const startStreamingTTS = async () => {
-      // Reset state
-      sentenceBufferRef.current = ''
-      streamingTtsFailedRef.current = false
-
-      // Track WebSocket ready state
-      let wsReady = false
-      let pendingSentences: string[] = []
-
-      // Subscribe to stream events FIRST (before connecting) to capture all chunks
-      streamUnsubscribe = bus.on('stream', (delta: string) => {
-        // Accumulate text and detect sentence boundaries
-        sentenceBufferRef.current += delta
-        const { sentences, remaining } = extractCompleteSentences(sentenceBufferRef.current)
-        sentenceBufferRef.current = remaining
-
-        // If WebSocket is ready, send immediately; otherwise buffer
-        for (const sentence of sentences) {
-          if (sentence.trim()) {
-            if (wsReady && streamingTtsRef.current) {
-              streamingTtsRef.current.sendText(sentence)
-            } else {
-              pendingSentences.push(sentence)
-            }
-          }
-        }
-      })
-
-      // Get voice from companion
-      try {
-        const companion = await getActiveCompanion(activeCompanionSlug)
-        currentVoiceId = companion.personality.voice?.voiceId || 'MEJe6hPrI48Kt2lFuVe3'
-      } catch {
-        currentVoiceId = 'MEJe6hPrI48Kt2lFuVe3'
-      }
-
-      // Create streaming TTS service
-      streamingTtsRef.current = new StreamingTTSService(hubUrl, hubAccessToken, {
-        enabled: true,
-        voice: currentVoiceId,
-        volume: ttsVolume,
-        speed: 1.0,
-      })
-
-      // Connect to WebSocket
-      const connected = await streamingTtsRef.current.connect()
-      if (!connected) {
-        log.warn(' Streaming TTS connection failed, will fall back to non-streaming')
-        streamingTtsFailedRef.current = true
-        streamingTtsRef.current.destroy()
-        streamingTtsRef.current = null
-        return
-      }
-
-      log.log(' Streaming TTS connected')
-
-      // Now WebSocket is ready - send any buffered sentences
-      wsReady = true
-      if (pendingSentences.length > 0) {
-        log.log(` Sending ${pendingSentences.length} buffered sentences`)
-        for (const sentence of pendingSentences) {
-          streamingTtsRef.current.sendText(sentence)
-        }
-        pendingSentences = []
-      }
-
-      // Emit speaking:start immediately
-      bus.emit('avatar', { type: 'speaking:start' })
-
-      // Connect lip sync to streaming analyser
-      const analyser = streamingTtsRef.current.getAnalyserNode()
-      let disconnectLipSync: (() => void) | null = null
-      if (analyser) {
-        const connectLipSync = (window as { __yumiConnectStreamingAnalyser?: (a: AnalyserNode) => () => void }).__yumiConnectStreamingAnalyser
-        if (connectLipSync) {
-          disconnectLipSync = connectLipSync(analyser)
-          log.log(' Streaming lip sync connected')
-        }
-      }
-
-      // Set up audio end callback
-      streamingTtsRef.current.onAudioEnd(() => {
-        log.log(' Streaming TTS audio finished, closing connection')
-        if (disconnectLipSync) {
-          disconnectLipSync()
-        }
-        bus.emit('avatar', { type: 'speaking:stop' })
-        // Now close the WebSocket connection
-        if (streamingTtsRef.current) {
-          streamingTtsRef.current.destroy()
-          streamingTtsRef.current = null
-        }
-      })
-    }
-
-    const stopStreamingTTS = () => {
-      // Unsubscribe from stream events
-      if (streamUnsubscribe) {
-        streamUnsubscribe()
-        streamUnsubscribe = null
-      }
-
-      // Flush remaining text but DON'T close yet - let server send all audio
-      if (streamingTtsRef.current && sentenceBufferRef.current.trim()) {
-        log.log(' Flushing remaining text, waiting for audio...')
-        streamingTtsRef.current.sendText(sentenceBufferRef.current, true)
-        sentenceBufferRef.current = ''
-      }
-
-      // Don't close immediately - the audioEndCallback will handle cleanup
-      // The server will send 'done' when all audio is sent, then audioEndCallback fires
-      // Only close if there was no audio at all (failed connection)
-      if (streamingTtsRef.current && streamingTtsFailedRef.current) {
-        streamingTtsRef.current.close()
-      }
-    }
-
-    // Start streaming TTS when chat streaming begins
-    if (status === 'streaming') {
-      startStreamingTTS()
-    }
-
-    // Cleanup when status changes or component unmounts
-    return () => {
-      stopStreamingTTS()
-    }
-  }, [status, ttsEnabled, hubUrl, hubAccessToken, ttsVolume, activeCompanionSlug])
-
-  // REMOVED: Auto-expand chat when streaming (now handled by floating bubble)
-  // Vision queries show responses in floating bubble, user opens chat manually if needed
-
-  // Check if history exists in IndexedDB only when explicitly cleared
-  useEffect(() => {
-    const checkHistory = async () => {
-      if (isCleared && displayMessages.length === 0) {
-        setHistoryLoading(true)
-        try {
-          const messages = await getThreadMessages(currentScope.id)
-          const count = messages.length
-          setHistoryCount(prev => prev !== count ? count : prev)
-        } catch (err) {
-          log.error(' Failed to check history:', err)
-          setHistoryCount(prev => prev !== 0 ? 0 : prev)
-        } finally {
+        .catch((err) => {
+          log.error('[ChatOverlay] Failed to check history:', err)
+        })
+        .finally(() => {
           setHistoryLoading(false)
-        }
-      } else {
-        setHistoryCount(prev => prev !== 0 ? 0 : prev)
-      }
+        })
     }
-
-    checkHistory()
   }, [isCleared, displayMessages.length, currentScope.id])
-  
-  // Auto-scroll to bottom on new messages
+
+  /**
+   * Auto-scroll to bottom on new messages
+   */
   useEffect(() => {
     if (containerRef.current) {
       containerRef.current.scrollTop = containerRef.current.scrollHeight
     }
   }, [displayMessages])
 
-  // Trigger memory extraction after conversation ends (idle after streaming)
-  const prevStatusRef = useRef<string>(status)
-  const extractionScheduledRef = useRef<boolean>(false)
-
-  useEffect(() => {
-    const wasStreaming = prevStatusRef.current === 'streaming'
-    const wasIdle = prevStatusRef.current === 'idle'
-    prevStatusRef.current = status
-
-    // Emit thinking:start when streaming begins
-    if (wasIdle && status === 'streaming') {
-      bus.emit('avatar', { type: 'thinking:start' })
-    }
-
-    // Check if we just finished streaming
-    if (wasStreaming && status === 'idle') {
-      log.log(' Stream ended, scheduling extraction in 30s...')
-
-      // Emit thinking:stop when streaming ends
-      bus.emit('avatar', { type: 'thinking:stop' })
-
-      // Trigger TTS for the last assistant message (fallback if streaming TTS failed)
-      if (ttsEnabled && displayMessages.length > 0 && streamingTtsFailedRef.current) {
-        const lastMessage = displayMessages[displayMessages.length - 1]
-        if (lastMessage.role === 'assistant' && lastMessage.content) {
-          log.log(' Streaming TTS failed, falling back to non-streaming TTS...')
-
-          // Emit speaking events
-          bus.emit('avatar', { type: 'speaking:start' })
-          ttsService.speak(lastMessage.content)
-            .then(() => {
-              bus.emit('avatar', { type: 'speaking:stop' })
-            })
-            .catch(err => {
-              log.error(' TTS failed:', err)
-              bus.emit('avatar', { type: 'speaking:stop' })
-            })
-        }
-      }
-
-      // Clear any existing extraction timer
-      if (extractionTimerRef.current) {
-        clearTimeout(extractionTimerRef.current)
-      }
-
-      extractionScheduledRef.current = true
-
-      // Schedule extraction after idle delay
-      extractionTimerRef.current = window.setTimeout(async () => {
-        extractionScheduledRef.current = false
-        const memoryStore = useMemoryStore.getState()
-
-        // Check if extraction should run
-        if (!shouldExtract(memoryStore.lastExtractionAt, displayMessages.length)) {
-          log.log(' Skipping extraction (too soon or not enough messages)')
-          return
-        }
-
-        log.log(' Triggering memory extraction...')
-        log.log(' displayMessages count:', displayMessages.length)
-
-        // Get recent messages for extraction
-        const recentMessages = displayMessages.slice(-EXTRACTION_CONFIG.batchSize).map(m => ({
-          role: m.role as 'user' | 'assistant' | 'system',
-          content: m.content,
-          id: m.id,
-          ts: m.ts,
-        }))
-
-        log.log(' Sending messages for extraction:', recentMessages.map(m => ({
-          role: m.role,
-          contentPreview: m.content.substring(0, 100) + (m.content.length > 100 ? '...' : '')
-        })))
-
-        const result = await extractMemoriesFromConversation(
-          recentMessages,
-          memoryStore.memories,
-          currentScope.id
-        )
-
-        log.log(' Extraction result:', result.success, 'memories:', result.memories.length)
-        if (result.raw) {
-          log.log(' Raw extraction response:', result.raw)
-        }
-
-        if (result.success && result.memories.length > 0) {
-          // Add source info to extracted memories
-          const memoriesWithSource = result.memories.map(m => ({
-            ...m,
-            source: {
-              conversationId: currentScope.id,
-              messageId: recentMessages[recentMessages.length - 1]?.id || '',
-              url: window.location.href,
-              timestamp: Date.now(),
-            }
-          }))
-
-          await addMemories(memoriesWithSource)
-          log.log(`Extracted and saved ${result.memories.length} memories`)
-        } else if (!result.success) {
-          log.error(' Extraction failed:', result.error)
-        }
-
-        setLastExtractionAt(Date.now())
-      }, EXTRACTION_CONFIG.idleDelayMs)
-    }
-
-    // Only cleanup on actual unmount, not on re-renders
-    // We don't return a cleanup function here to prevent timer cancellation
-  }, [status, displayMessages, currentScope.id, addMemories, setLastExtractionAt, ttsEnabled])
-
-  // Separate cleanup effect that only runs on unmount
-  useEffect(() => {
-    return () => {
-      if (extractionTimerRef.current && !extractionScheduledRef.current) {
-        clearTimeout(extractionTimerRef.current)
-      }
-    }
-  }, [])
-
-  useEffect(() => {
-    if (status === 'idle' && pendingSourcesRef.current && displayMessages.length > 0) {
-      const lastMessage = displayMessages[displayMessages.length - 1]
-      if (lastMessage.role === 'assistant' && lastMessage.id) {
-        log.log(' Associating sources with message:', lastMessage.id)
-        setMessageSources(prev => {
-          const next = new Map(prev)
-          next.set(lastMessage.id, pendingSourcesRef.current!)
-          return next
-        })
-        pendingSourcesRef.current = null
-      }
-    }
-  }, [status, displayMessages])
-
-  // Sync refs with latest values
+  /**
+   * Sync refs with latest values
+   */
   useEffect(() => {
     statusRef.current = status
     connectedRef.current = connected
@@ -729,25 +264,24 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
     currentScopeRef.current = currentScope
     sendMessageActionRef.current = sendMessageAction
   }, [status, connected, sendViaPort, currentScope, sendMessageAction])
-  
-  // Internal function to actually send the message (called after search decision)
+
+  /**
+   * Core message sending function
+   */
   const doSendMessage = useCallback(async (content: string, searchResults?: SearchResult[]) => {
     if (!content.trim() || statusRef.current === 'sending' || statusRef.current === 'streaming') return
 
-    // Capture prefilled context before clearing it
     const selectedContext = prefilledContext
     const selectedSource = contextSource
 
-    // Clear prefilled context immediately after capture
     setPrefilledContext(null)
     setContextSource(null)
 
-    // Check if this is a vision/screenshot query
     const wantsVision = isVisionQuery(content)
     let screenshotBase64: string | null = null
 
     if (wantsVision) {
-      log.log(' Vision query detected, capturing screenshot...')
+      log.log('[ChatOverlay] Vision query detected, capturing screenshot...')
       try {
         const response = await new Promise<{ success: boolean; screenshot?: string; error?: string }>((resolve) => {
           chrome.runtime.sendMessage({ type: 'CAPTURE_SCREENSHOT' }, resolve)
@@ -755,62 +289,52 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
 
         if (response.success && response.screenshot) {
           screenshotBase64 = response.screenshot
-          log.log(' Screenshot captured successfully')
+          log.log('[ChatOverlay] Screenshot captured successfully')
         } else {
-          log.warn(' Screenshot capture failed:', response.error)
+          log.warn('[ChatOverlay] Screenshot capture failed:', response.error)
         }
       } catch (err) {
-        log.warn(' Failed to capture screenshot:', err)
+        log.warn('[ChatOverlay] Failed to capture screenshot:', err)
       }
     }
 
-    // Get memory context for personalization
     const memoryStore = useMemoryStore.getState()
     const { context: memoryContext } = getMemoriesForPrompt(
       memoryStore.memories,
       { currentMessage: content },
-      500 // Max tokens for memory context
+      500
     )
 
-    // Extract page context for AI awareness
-    let pageContext: string | undefined
     let pageType: string | undefined
     try {
       const extracted = await extractPageContext({ level: 2 })
-      pageContext = buildContextForPrompt(extracted, 3000)
       pageType = extracted.type
-      log.log(' Page context extracted:', { type: pageType, length: pageContext.length })
+      log.log('[ChatOverlay] Page type detected:', pageType)
     } catch (err) {
-      log.warn(' Failed to extract page context:', err)
+      log.warn('[ChatOverlay] Failed to extract page context:', err)
     }
 
-    // Create message in store first and get conversation history
     const history = await sendMessageActionRef.current(content, {
       url: window.location.href,
       title: document.title,
     })
 
-    // Build selected context string for the prompt (from right-click context menu)
     let selectedContextStr: string | undefined
     if (selectedContext) {
       const sourceLabel = selectedSource === 'selection' ? 'Selected text' : 'Element content'
       selectedContextStr = `## ${sourceLabel} from page\n\n${selectedContext}`
-      log.log(' Including selected context:', selectedContext.slice(0, 100) + '...')
+      log.log('[ChatOverlay] Including selected context:', selectedContext.slice(0, 100) + '...')
     }
 
-    // Build search context string if we have search results
     let searchContextStr: string | undefined
     if (searchResults && searchResults.length > 0) {
       searchContextStr = formatSearchResultsForPrompt(searchResults)
-      log.log(' Including search context:', searchResults.length, 'results')
+      log.log('[ChatOverlay] Including search context:', searchResults.length, 'results')
       pendingSourcesRef.current = searchResults
     }
 
-    // Send via port for streaming with conversation history and context
     if (connectedRef.current) {
-      // If we have a screenshot, send as vision query; otherwise regular chat
       if (screenshotBase64) {
-        // Send vision query with screenshot
         sendViaPortRef.current(currentScopeRef.current.id, content, {
           url: window.location.href,
           title: document.title,
@@ -818,12 +342,10 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
           memoryContext: memoryContext || undefined,
           selectedContext: selectedContextStr,
           searchContext: searchContextStr,
-          pageContext,  // Include page content for AI awareness
           pageType,
-          screenshot: screenshotBase64,  // Include screenshot for vision
+          screenshot: screenshotBase64,
         })
       } else {
-        // Regular chat with page context
         sendViaPortRef.current(currentScopeRef.current.id, content, {
           url: window.location.href,
           title: document.title,
@@ -831,138 +353,58 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
           memoryContext: memoryContext || undefined,
           selectedContext: selectedContextStr,
           searchContext: searchContextStr,
-          pageContext,  // Include page content for AI awareness
           pageType,
         })
       }
     } else {
-      log.warn(' Port not connected, cannot stream')
+      log.warn('[ChatOverlay] Port not connected, cannot stream')
     }
-  }, [prefilledContext, contextSource])
+  }, [prefilledContext, contextSource, setPrefilledContext, setContextSource, pendingSourcesRef])
 
-  // Handle search prompt callbacks
+  /**
+   * Callback functions
+   */
+  const handleSendMessage = useCallback(async (content: string) => {
+    await handleSendMessageWithSearch(content, doSendMessage)
+  }, [handleSendMessageWithSearch, doSendMessage])
+
   const handleSearchConfirm = useCallback(async () => {
-    if (!pendingMessage) return
-
-    setShowSearchPrompt(false)
-    setIsSearching(true)
-    setSearchError(null)
-
-    try {
-      log.log(' Performing web search for:', searchQuery)
-      const response = await performSearch({ query: searchQuery })
-      log.log(' Search completed:', response.results.length, 'results')
-      await doSendMessage(pendingMessage, response.results)
-    } catch (err) {
-      log.warn(' Search failed, sending without results:', err)
-      setSearchError('Search unavailable, answering from knowledge')
-      setTimeout(() => setSearchError(null), 4000)
-      await doSendMessage(pendingMessage)
-    } finally {
-      setIsSearching(false)
-      setPendingMessage(null)
-      setSearchQuery('')
-    }
-  }, [pendingMessage, searchQuery, doSendMessage])
+    await handleSearchConfirmHook(doSendMessage)
+  }, [handleSearchConfirmHook, doSendMessage])
 
   const handleSearchSkip = useCallback(async () => {
-    if (!pendingMessage) return
+    await handleSearchSkipHook(doSendMessage)
+  }, [handleSearchSkipHook, doSendMessage])
 
-    setShowSearchPrompt(false)
-    setPendingMessage(null)
-    setSearchQuery('')
-
-    // Send message without search results
-    await doSendMessage(pendingMessage)
-  }, [pendingMessage, doSendMessage])
-
-  // Main send message handler - checks if search should be suggested
-  const handleSendMessage = useCallback(async (content: string) => {
-    if (!content.trim() || statusRef.current === 'sending' || statusRef.current === 'streaming') return
-
-    // Check if we should suggest a web search
-    if (shouldSuggestSearch(content)) {
-      const query = extractSearchQuery(content)
-      log.log(' Search suggested for:', query)
-      setSearchQuery(query)
-      setPendingMessage(content)
-      setShowSearchPrompt(true)
-      return
-    }
-
-    // No search needed, send directly
-    await doSendMessage(content)
-  }, [doSendMessage])
-  
   const handleClearThread = useCallback(async () => {
     if (confirm('Clear conversation from view? (Messages remain in history)')) {
       await useScopedChatStore.getState().clearCurrentThread()
     }
   }, [])
-  
+
   const handleExportThread = useCallback(() => {
     const messages = displayMessages
-    const dataStr = JSON.stringify({ 
-      scope: currentScope, 
+    const dataStr = JSON.stringify({
+      scope: currentScope,
       messages,
       exportedAt: new Date().toISOString()
     }, null, 2)
     const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr)
     const exportFileDefaultName = `yumi-chat-${currentScope.origin}-${Date.now()}.json`
-    
+
     const linkElement = document.createElement('a')
     linkElement.setAttribute('href', dataUri)
     linkElement.setAttribute('download', exportFileDefaultName)
     linkElement.click()
   }, [displayMessages, currentScope])
-  
+
   const handleTogglePrivateMode = useCallback(() => {
     useScopedChatStore.getState().togglePrivateMode()
   }, [])
 
-  // Handle proactive message - add to chat and show
-  const showProactiveMessage = useCallback(async (action: ProactiveAction) => {
-    if (!proactiveControllerRef.current) return
-
-    // Record that we're showing this proactive
-    proactiveControllerRef.current.recordProactive(action.memory?.id)
-
-    // Add as assistant message
-    const store = useScopedChatStore.getState()
-    await store.addProactiveMessage(action.message)
-
-    // Expand chat to show the message
-    setIsExpanded(true)
-    setChatOpen(true)
-    onToggle?.(true)
-
-    // Track the action for feedback when user responds
-    setProactiveAction(action)
-
-    log.log(' Proactive message shown:', action.type)
-    bus.emit('proactive:triggered', {
-      type: action.type,
-      message: action.message,
-      memoryId: action.memory?.id,
-    })
-  }, [onToggle])
-
-  // Mark proactive as engaged when user responds
-  const handleProactiveEngaged = useCallback(async () => {
-    if (!proactiveAction || !proactiveControllerRef.current) return
-
-    const memoryId = proactiveAction.memory?.id
-    if (memoryId) {
-      proactiveControllerRef.current.recordFeedback(memoryId, 'engaged')
-      await updateImportance(memoryId, 0.1)
-      bus.emit('proactive:engaged', memoryId)
-      log.log(' Proactive engaged:', proactiveAction.type)
-    }
-
-    setProactiveAction(null)
-  }, [proactiveAction, updateImportance])
-
-  // Don't render when collapsed - chat button handles expansion
+  /**
+   * Render
+   */
   if (!isExpanded) return null
 
   const hasMessages = displayMessages.length > 0
@@ -970,7 +412,7 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
 
   return (
     <>
-    <div
+      <div
         id="yumi-chat-overlay"
         className="glass-panel"
         style={{
@@ -986,7 +428,6 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
           animation: 'yumiChatSlideIn 0.25s ease-out',
         }}
       >
-        {/* Floating Menu (top-right) */}
         <ChatHeader
           connected={connected}
           privateMode={privateMode}
@@ -995,7 +436,6 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
           onTogglePrivateMode={handleTogglePrivateMode}
         />
 
-        {/* Messages area */}
         <div
           ref={containerRef}
           style={{
@@ -1003,7 +443,7 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
             minHeight: 0,
             overflowY: 'auto',
             padding: `${CHAT.padding}px`,
-            paddingTop: `${CHAT.headerClearance}px`, // Space for floating menu
+            paddingTop: `${CHAT.headerClearance}px`,
             scrollbarWidth: 'thin',
           }}
           className="yumi-chat-scroll"
@@ -1055,7 +495,6 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
             )}
           </AnimatePresence>
 
-          {/* Search Prompt */}
           <SearchPrompt
             query={searchQuery}
             visible={showSearchPrompt}
@@ -1063,23 +502,23 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
             onSkip={handleSearchSkip}
           />
 
-          {/* Searching Indicator */}
           <AnimatePresence>
             {isSearching && (
               <motion.div
-                initial={{ opacity: 0, y: 10 }}
+                initial={{ opacity: 0, y: -8 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="mb-3 p-3 rounded-xl glass-bubble-ai"
+                exit={{ opacity: 0, y: -8 }}
+                style={{
+                  margin: '8px 0',
+                  padding: '10px 12px',
+                  background: 'rgba(59, 130, 246, 0.15)',
+                  border: '1px solid rgba(59, 130, 246, 0.30)',
+                  borderRadius: '10px',
+                  fontSize: '13px',
+                  color: '#93c5fd',
+                }}
               >
-                <div className="flex items-center gap-2 text-sm text-white/70">
-                  <motion.span
-                    animate={{ rotate: 360 }}
-                    transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                    className="w-4 h-4 border-2 border-white/30 border-t-white/70 rounded-full"
-                  />
-                  Searching the web...
-                </div>
+                Searching web...
               </motion.div>
             )}
           </AnimatePresence>
@@ -1087,80 +526,84 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
           <AnimatePresence>
             {searchError && (
               <motion.div
-                initial={{ opacity: 0, y: 10 }}
+                initial={{ opacity: 0, y: -8 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="mb-3 p-3 rounded-xl"
+                exit={{ opacity: 0, y: -8 }}
                 style={{
+                  margin: '8px 0',
+                  padding: '10px 12px',
                   background: 'rgba(251, 191, 36, 0.15)',
                   border: '1px solid rgba(251, 191, 36, 0.30)',
+                  borderRadius: '10px',
+                  fontSize: '13px',
+                  color: '#fde047',
                 }}
               >
-                <div className="flex items-center gap-2 text-sm text-amber-200/90">
-                  <span className="text-amber-400">!</span>
-                  {searchError}
+                {searchError}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <AnimatePresence>
+            {prefilledContext && (
+              <motion.div
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                style={{
+                  margin: '8px 0',
+                  padding: '10px 12px',
+                  background: 'rgba(139, 92, 246, 0.15)',
+                  border: '1px solid rgba(139, 92, 246, 0.30)',
+                  borderRadius: '10px',
+                  fontSize: '13px',
+                  color: '#c4b5fd',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  justifyContent: 'space-between',
+                  gap: '8px',
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 500, marginBottom: '4px' }}>
+                    {contextSource === 'selection' ? 'Selected text' : 'Element content'}
+                  </div>
+                  <div style={{ opacity: 0.8, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {prefilledContext.slice(0, 100)}...
+                  </div>
                 </div>
+                <button
+                  onClick={() => {
+                    setPrefilledContext(null)
+                    setContextSource(null)
+                  }}
+                  style={{
+                    background: 'rgba(139, 92, 246, 0.20)',
+                    border: 'none',
+                    borderRadius: '6px',
+                    padding: '4px 8px',
+                    color: '#c4b5fd',
+                    cursor: 'pointer',
+                    fontSize: '12px',
+                    flexShrink: 0,
+                  }}
+                >
+                  Clear
+                </button>
               </motion.div>
             )}
           </AnimatePresence>
         </div>
 
-        {/* Context Preview (from right-click menu) */}
-        <AnimatePresence>
-          {prefilledContext && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.2 }}
-              style={{
-                padding: '8px 12px',
-                background: 'rgba(255, 255, 255, 0.10)',
-                borderTop: '1px solid rgba(255, 255, 255, 0.10)',
-                fontSize: '12px',
-                color: 'rgba(255, 255, 255, 0.80)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                overflow: 'hidden',
-              }}
-            >
-              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {contextSource === 'selection' ? '[Selected]' : '[Element]'} {prefilledContext.slice(0, 60)}...
-              </span>
-              <button
-                onClick={() => {
-                  setPrefilledContext(null)
-                  setContextSource(null)
-                }}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  fontSize: '14px',
-                  color: 'rgba(255, 255, 255, 0.50)',
-                  padding: '2px 4px',
-                }}
-                title="Clear context"
-              >
-                x
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Message Input */}
         <MessageInput
           ref={messageInputRef}
           onSend={handleSendMessage}
-          disabled={!connected || status === 'sending' || status === 'streaming'}
-          sttEnabled={sttEnabled}
-          hubUrl={hubUrl}
-          hubAccessToken={hubAccessToken}
+          disabled={!connected || status === 'streaming'}
+          placeholder={connected ? 'Message...' : 'Connecting...'}
+          onProactiveEngaged={handleProactiveEngaged}
         />
       </div>
 
-      {/* Expression Debug Panel - for tuning parameters (dev only) */}
       {SHOW_DEBUG_PANEL && ExpressionDebugPanel && (
         <React.Suspense fallback={null}>
           <ExpressionDebugPanel />

@@ -3,6 +3,9 @@ import { ImageUnderstanding } from './ImageUnderstanding'
 import { injectVisionStyles } from './utils'
 import { mergeVisionConfig } from '../../lib/types/visionConfig'
 import type { VisionConfig } from '../../lib/types/visionConfig'
+import { createLogger } from '../../lib/debug'
+
+const log = createLogger('VisionAbilities')
 
 class VisionAbilitiesManager {
   private config: VisionConfig | null = null
@@ -21,16 +24,16 @@ class VisionAbilitiesManager {
       this.imageUnderstanding = new ImageUnderstanding(this.config.imageUnderstanding)
     }
 
-    console.log('[VisionAbilities] ✅ Initialized')
+    log.log('Initialized')
   }
 
   private async loadConfig() {
     try {
       const data = await chrome.storage.local.get('vision-abilities-config')
       this.config = mergeVisionConfig(data['vision-abilities-config'])
-      console.log('[VisionAbilities] Config loaded:', this.config)
+      log.log('Config loaded:', this.config)
     } catch (err) {
-      console.warn('[VisionAbilities] Failed to load config, using defaults', err)
+      log.warn('Failed to load config, using defaults', err)
       this.config = mergeVisionConfig(undefined)
     }
   }

@@ -26,6 +26,9 @@ import {
   pruneOldMessages,
   saveThread
 } from '../utils/db'
+import { createLogger } from '../../lib/debug'
+
+const log = createLogger('ScopedChat')
 
 export type ChatStatus = 'idle' | 'sending' | 'streaming' | 'error' | 'canceled'
 
@@ -77,7 +80,7 @@ export const useScopedChatStore = create<ScopedChatState>((set, get) => ({
    * Switch to a different scope
    */
   switchScope: async (scope: Scope) => {
-    console.log('[ScopedChat] Switching to scope:', scope.id)
+    log.log('Switching to scope:', scope.id)
     
     // Save current scope to session storage
     setCurrentScope(scope)
@@ -99,9 +102,9 @@ export const useScopedChatStore = create<ScopedChatState>((set, get) => ({
    */
   sendMessage: async (content: string, context?: Record<string, any>) => {
     const { currentScope, privateMode, status } = get()
-    
+
     if (!content.trim() || status === 'sending' || status === 'streaming') {
-      console.warn('[ScopedChat] Cannot send: invalid state')
+      log.warn('Cannot send: invalid state')
       return
     }
     
@@ -147,7 +150,7 @@ export const useScopedChatStore = create<ScopedChatState>((set, get) => ({
       try {
         await addMessage(userMessage)
       } catch (err) {
-        console.error('[ScopedChat] Failed to persist user message:', err)
+        log.error('Failed to persist user message:', err)
       }
     }
     
@@ -163,9 +166,9 @@ export const useScopedChatStore = create<ScopedChatState>((set, get) => ({
    */
   updateStreamingMessage: (delta: string) => {
     const { streamingMessage, currentScope } = get()
-    
+
     if (!streamingMessage) {
-      console.warn('[ScopedChat] No streaming message to update')
+      log.warn('No streaming message to update')
       return
     }
     
@@ -195,9 +198,9 @@ export const useScopedChatStore = create<ScopedChatState>((set, get) => ({
    */
   finalizeStreamingMessage: async () => {
     const { streamingMessage, currentScope, privateMode } = get()
-    
+
     if (!streamingMessage) {
-      console.warn('[ScopedChat] No streaming message to finalize')
+      log.warn('No streaming message to finalize')
       set({ status: 'idle' })
       return
     }
@@ -225,7 +228,7 @@ export const useScopedChatStore = create<ScopedChatState>((set, get) => ({
     if (!privateMode) {
       try {
         await addMessage(finalMessage)
-        
+
         // Prune if needed (keep under 16k chars)
         const charCount = currentMessages.reduce((sum, m) => sum + m.content.length, 0)
         if (charCount > 16000) {
@@ -234,7 +237,7 @@ export const useScopedChatStore = create<ScopedChatState>((set, get) => ({
           await get().hydrateThread(currentScope.id)
         }
       } catch (err) {
-        console.error('[ScopedChat] Failed to persist assistant message:', err)
+        log.error('Failed to persist assistant message:', err)
       }
     }
   },
@@ -245,15 +248,15 @@ export const useScopedChatStore = create<ScopedChatState>((set, get) => ({
   hydrateThread: async (scopeId: string) => {
     try {
       const messages = await getThreadMessages(scopeId)
-      
+
       const newThreads = new Map(get().threads)
       newThreads.set(scopeId, messages)
-      
+
       set({ threads: newThreads })
-      
-      console.log(`[ScopedChat] Loaded ${messages.length} messages for scope ${scopeId}`)
+
+      log.log(`Loaded ${messages.length} messages for scope ${scopeId}`)
     } catch (err) {
-      console.error('[ScopedChat] Failed to hydrate thread:', err)
+      log.error('Failed to hydrate thread:', err)
       set({ error: 'Failed to load messages' })
     }
   },
@@ -270,10 +273,10 @@ export const useScopedChatStore = create<ScopedChatState>((set, get) => ({
     
     // Mark as cleared and persist state
     sessionStorage.setItem(`yumi-cleared-${currentScope.id}`, 'true')
-    
+
     set({ threads: newThreads, streamingMessage: null, error: null, status: 'idle', isCleared: true })
-    
-    console.log(`[ScopedChat] Cleared UI for thread ${currentScope.id} (messages still in IndexedDB)`)
+
+    log.log(`Cleared UI for thread ${currentScope.id} (messages still in IndexedDB)`)
   },
   
   /**
@@ -281,14 +284,14 @@ export const useScopedChatStore = create<ScopedChatState>((set, get) => ({
    */
   reloadThread: async () => {
     const { currentScope } = get()
-    
+
     // Remove cleared flag
     sessionStorage.removeItem(`yumi-cleared-${currentScope.id}`)
-    
+
     await get().hydrateThread(currentScope.id)
     set({ isCleared: false })
-    
-    console.log(`[ScopedChat] Reloaded thread ${currentScope.id} from IndexedDB`)
+
+    log.log(`Reloaded thread ${currentScope.id} from IndexedDB`)
   },
   
   /**
@@ -319,7 +322,7 @@ export const useScopedChatStore = create<ScopedChatState>((set, get) => ({
     const { currentScope, privateMode } = get()
 
     if (!content.trim()) {
-      console.warn('[ScopedChat] Cannot add empty proactive message')
+      log.warn('Cannot add empty proactive message')
       return
     }
 
@@ -349,11 +352,11 @@ export const useScopedChatStore = create<ScopedChatState>((set, get) => ({
       try {
         await addMessage(assistantMessage)
       } catch (err) {
-        console.error('[ScopedChat] Failed to persist proactive message:', err)
+        log.error('Failed to persist proactive message:', err)
       }
     }
 
-    console.log('[ScopedChat] Added proactive message')
+    log.log('Added proactive message')
   },
 
   /**
@@ -376,14 +379,14 @@ export const useScopedChatStore = create<ScopedChatState>((set, get) => ({
 ;(async () => {
   const store = useScopedChatStore.getState()
   const currentScope = getCurrentScope()
-  
-  console.log('[ScopedChat] Initializing with scope:', currentScope.id)
-  
+
+  log.log('Initializing with scope:', currentScope.id)
+
   // Check if this scope was previously cleared
   const wasCleared = sessionStorage.getItem(`yumi-cleared-${currentScope.id}`) === 'true'
-  
+
   if (wasCleared) {
-    console.log('[ScopedChat] Scope was cleared, not loading messages')
+    log.log('Scope was cleared, not loading messages')
     store.setStatus('idle')
     useScopedChatStore.setState({ isCleared: true })
   } else {

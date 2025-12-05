@@ -17,9 +17,59 @@ import { assembleSystemPrompt, DEFAULT_PERSONALITY, createPersonality } from './
  */
 export interface PageContextInfo {
   pageType?: string
-  pageContext?: string  // Pre-built context string from buildContextForPrompt() (deprecated)
   selectedContext?: string  // User-selected content from right-click context menu
   searchContext?: string  // Web search results context
+}
+
+/**
+ * Context injection options for runtime prompt enhancement
+ */
+interface ContextInjectionOptions {
+  memoryContext?: string
+  selectedContext?: string
+  searchContext?: string
+}
+
+/**
+ * Inject runtime context (memory, selection, search) into a prompt
+ * Shared logic for consistent context formatting across different prompt types
+ */
+function injectRuntimeContext(
+  prompt: string,
+  options: ContextInjectionOptions
+): string {
+  let result = prompt
+
+  // Memory context
+  if (options.memoryContext?.trim()) {
+    result += `\n\n## Long-Term Memory\n`
+    result += `${options.memoryContext}\n\n`
+    result += `**Memory Guidelines:**\n`
+    result += `- Reference memories naturally when relevant (e.g., "I remember you mentioned...")\n`
+    result += `- Use memories to personalize responses and show you care\n`
+    result += `- Don't force memories into every response - only when genuinely relevant\n`
+    result += `- If a memory seems outdated or wrong, ask to confirm\n`
+  }
+
+  // Selected context
+  if (options.selectedContext?.trim()) {
+    result += `\n\n## User-Selected Content\n`
+    result += `The user has selected the following content for you to read and discuss:\n\n`
+    result += `---\n${options.selectedContext}\n---\n\n`
+    result += `**IMPORTANT - You MUST:**\n`
+    result += `- Immediately read and acknowledge the content above\n`
+    result += `- Discuss, analyze, or comment on it based on the user's message\n`
+    result += `- Reference specific details from the content in your response\n`
+    result += `- If the user just says "read this" or similar, summarize and share your thoughts\n`
+    result += `- Never ask "what would you like me to read?" - you already have the content\n`
+  }
+
+  // Search context
+  if (options.searchContext?.trim()) {
+    result += `\n\n${options.searchContext}`
+  }
+
+  return result
 }
 
 /**
@@ -58,46 +108,12 @@ export function buildChatSystemPrompt(
     prompt = assembleSystemPrompt(defaultPersonality, true)
   }
 
-  // Add memory context if available
-  if (memoryContext && memoryContext.trim()) {
-    prompt += `\n\n## Long-Term Memory\n`
-    prompt += `${memoryContext}\n\n`
-    prompt += `**Memory Guidelines:**\n`
-    prompt += `- Reference memories naturally when relevant (e.g., "I remember you mentioned...")\n`
-    prompt += `- Use memories to personalize responses and show you care\n`
-    prompt += `- Don't force memories into every response - only when genuinely relevant\n`
-    prompt += `- If a memory seems outdated or wrong, ask to confirm\n`
-  }
-
-  // Add user-selected context from right-click menu (primary method)
-  if (pageInfo?.selectedContext && pageInfo.selectedContext.trim()) {
-    prompt += `\n\n## User-Selected Content\n`
-    prompt += `The user has selected the following content for you to read and discuss:\n\n`
-    prompt += `---\n${pageInfo.selectedContext}\n---\n\n`
-    prompt += `**IMPORTANT - You MUST:**\n`
-    prompt += `- Immediately read and acknowledge the content above\n`
-    prompt += `- Discuss, analyze, or comment on it based on the user's message\n`
-    prompt += `- Reference specific details from the content in your response\n`
-    prompt += `- If the user just says "read this" or similar, summarize and share your thoughts\n`
-    prompt += `- Never ask "what would you like me to read?" - you already have the content\n`
-  }
-
-  // Legacy: Add page context if available (for backwards compatibility)
-  if (pageInfo?.pageContext && pageInfo.pageContext.trim() && !pageInfo?.selectedContext) {
-    prompt += `\n\n## Current Page Context\n`
-    prompt += `The user is currently viewing a **${pageInfo.pageType || 'web'}** page.\n\n`
-    prompt += pageInfo.pageContext + '\n\n'
-    prompt += `**Page Context Guidelines:**\n`
-    prompt += `- Use this context to understand what the user is looking at\n`
-    prompt += `- Reference specific details from the page when answering questions about it\n`
-    prompt += `- If the user's question relates to the page content, leverage this context\n`
-    prompt += `- Don't mention "page context" explicitly - just naturally incorporate the knowledge\n`
-  }
-
-  // Add web search results if available
-  if (pageInfo?.searchContext && pageInfo.searchContext.trim()) {
-    prompt += `\n\n${pageInfo.searchContext}`
-  }
+  // Inject runtime context (memory, selection, search)
+  prompt = injectRuntimeContext(prompt, {
+    memoryContext,
+    selectedContext: pageInfo?.selectedContext,
+    searchContext: pageInfo?.searchContext,
+  })
 
   // Add conversational context (the only dynamic part)
   prompt += `\n\n## Current Session\n`

@@ -4,6 +4,9 @@ import { Brain, Search, Trash2, X, MessageCircle, Clock } from 'lucide-react'
 import { cn } from '../../lib/design/utils'
 import { useMemoryStore, loadProactiveHistory } from '../../lib/memory'
 import type { Memory, MemoryType, ProactiveHistoryEntry } from '../../lib/memory'
+import { createLogger } from '../../lib/debug'
+
+const log = createLogger('MemoryBrowser')
 
 const TYPE_COLORS: Record<MemoryType, string> = {
   identity: 'bg-blue-500/20 text-blue-300',
@@ -95,20 +98,20 @@ export function MemoryBrowser() {
   const clearAll = useMemoryStore(s => s.clearAll)
 
   useEffect(() => {
-    console.log('[MemoryBrowser] Loading memories...')
+    log.log('Loading memories...')
     loadMemories().then(() => {
-      console.log('[MemoryBrowser] Loaded, count:', useMemoryStore.getState().memories.length)
+      log.log('Loaded, count:', useMemoryStore.getState().memories.length)
     }).catch(err => {
-      console.error('[MemoryBrowser] Load failed:', err)
+      log.error('Load failed:', err)
     })
 
     setHistoryLoading(true)
     loadProactiveHistory().then(history => {
       setProactiveHistory(history)
       setHistoryLoading(false)
-      console.log('[MemoryBrowser] Loaded proactive history:', history.length)
+      log.log('Loaded proactive history:', history.length)
     }).catch(err => {
-      console.error('[MemoryBrowser] History load failed:', err)
+      log.error('History load failed:', err)
       setHistoryLoading(false)
     })
   }, [loadMemories])

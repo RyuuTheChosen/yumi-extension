@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react'
 import { SettingsPanel } from './components/SettingsPanel'
 import { useSettingsStore } from '../lib/stores/settings.store'
 import { usePersonalityStore } from '../lib/stores/personality.store'
+import { createLogger } from '../lib/debug'
+
+const log = createLogger('Popup')
 
 // Hydration gate hook following Zustand best practices
 function useHydration() {
@@ -13,22 +16,22 @@ function useHydration() {
       const settingsReady = useSettingsStore.persist.hasHydrated()
       const personalityReady = usePersonalityStore.persist.hasHydrated()
       
-      console.log('[Popup] Hydration check:', { settingsReady, personalityReady })
-      
+      log.log('Hydration check:', { settingsReady, personalityReady })
+
       if (settingsReady && personalityReady) {
-        console.log('[Popup] All stores hydrated, rendering UI')
+        log.log('All stores hydrated, rendering UI')
         setHydrated(true)
       }
     }
     
     // Subscribe to hydration completion for both stores
     const unsubSettings = useSettingsStore.persist.onFinishHydration(() => {
-      console.log('[Popup] Settings store hydrated')
+      log.log('Settings store hydrated')
       checkBothHydrated()
     })
-    
+
     const unsubPersonality = usePersonalityStore.persist.onFinishHydration(() => {
-      console.log('[Popup] Personality store hydrated')
+      log.log('Personality store hydrated')
       checkBothHydrated()
     })
     

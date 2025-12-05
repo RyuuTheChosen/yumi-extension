@@ -7,6 +7,9 @@
 
 import { useContextStore, extractPageContext } from '../lib/context'
 import type { PageContext } from '../lib/context'
+import { createLogger } from '../lib/debug'
+
+const log = createLogger('Extract')
 
 /**
  * Extract main content from the current page
@@ -67,7 +70,7 @@ export async function getPageContextForChat(): Promise<{
       content: context.mainContent?.slice(0, 5000),
     }
   } catch (error) {
-    console.error('[Extract] Failed to get context:', error)
+    log.error('Failed to get context:', error)
     return {
       url: window.location.href,
       title: document.title,

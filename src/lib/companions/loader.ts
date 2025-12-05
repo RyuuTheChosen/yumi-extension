@@ -12,6 +12,9 @@ import {
   revokeCompanionBlobUrls,
   type StoredCompanion,
 } from './db'
+import { createLogger } from '../debug'
+
+const log = createLogger('CompanionLoader')
 
 // Default bundled companion ID
 const BUNDLED_COMPANION_ID = 'yumi'
@@ -65,7 +68,7 @@ export async function loadInstalledCompanion(slug: string): Promise<LoadedCompan
     const previewUrl = await getCompanionFileUrl(slug, stored.manifest.preview)
 
     if (!modelUrl) {
-      console.warn(`[Loader] Missing model file for installed companion: ${slug}`)
+      log.warn(`Missing model file for installed companion: ${slug}`)
       return null
     }
 
@@ -80,7 +83,7 @@ export async function loadInstalledCompanion(slug: string): Promise<LoadedCompan
       baseUrl: `indexeddb://${slug}`, // Special marker for installed companions
     }
   } catch (error) {
-    console.error(`[Loader] Failed to load installed companion ${slug}:`, error)
+    log.error(`Failed to load installed companion ${slug}:`, error)
     return null
   }
 }
@@ -95,7 +98,7 @@ export async function getActiveCompanion(activeSlug?: string): Promise<LoadedCom
 
   // Clean up blob URLs from previous companion if switching
   if (currentCompanionSlug && currentCompanionSlug !== slug) {
-    console.log(`[Loader] Switching from ${currentCompanionSlug} to ${slug}, cleaning up blob URLs`)
+    log.log(`Switching from ${currentCompanionSlug} to ${slug}, cleaning up blob URLs`)
     revokeCompanionBlobUrls(currentCompanionSlug)
   }
 
@@ -105,10 +108,10 @@ export async function getActiveCompanion(activeSlug?: string): Promise<LoadedCom
   if (slug !== BUNDLED_COMPANION_ID) {
     const installed = await loadInstalledCompanion(slug)
     if (installed) {
-      console.log(`[Loader] Loaded installed companion: ${slug}`)
+      log.log(`Loaded installed companion: ${slug}`)
       loadedCompanion = installed
     } else {
-      console.warn(`[Loader] Installed companion ${slug} not found, falling back to bundled`)
+      log.warn(`Installed companion ${slug} not found, falling back to bundled`)
       loadedCompanion = await loadBundledCompanion(BUNDLED_COMPANION_ID)
     }
   } else {

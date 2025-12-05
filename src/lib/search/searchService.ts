@@ -7,6 +7,7 @@ import type {
 import { SEARCH_CONFIG } from './types'
 
 const searchCache = new Map<string, CachedSearch>()
+const accessTimes = new Map<string, number>()
 
 function getCacheKey(query: string): string {
   return query.toLowerCase().trim()
@@ -14,19 +15,24 @@ function getCacheKey(query: string): string {
 
 function cleanExpiredCache(): void {
   const now = Date.now()
+
+  // Remove expired entries
   for (const [key, cached] of searchCache.entries()) {
     if (cached.expiresAt < now) {
       searchCache.delete(key)
+      accessTimes.delete(key)
     }
   }
 
+  // LRU eviction if over max size
   if (searchCache.size > SEARCH_CONFIG.maxCacheSize) {
-    const entries = Array.from(searchCache.entries())
-      .sort((a, b) => a[1].cachedAt - b[1].cachedAt)
+    const entries = Array.from(accessTimes.entries())
+      .sort((a, b) => a[1] - b[1]) // Sort by access time (oldest first)
 
     const toRemove = entries.slice(0, entries.length - SEARCH_CONFIG.maxCacheSize)
     for (const [key] of toRemove) {
       searchCache.delete(key)
+      accessTimes.delete(key)
     }
   }
 }
@@ -38,8 +44,12 @@ function getCachedSearch(query: string): SearchResponse | null {
   if (!cached) return null
   if (cached.expiresAt < Date.now()) {
     searchCache.delete(key)
+    accessTimes.delete(key)
     return null
   }
+
+  // Update access time on cache hit (LRU)
+  accessTimes.set(key, Date.now())
 
   return cached.response
 }
@@ -55,6 +65,7 @@ function cacheSearch(query: string, response: SearchResponse): void {
     cachedAt: now,
     expiresAt: now + SEARCH_CONFIG.cacheTtlMs,
   })
+  accessTimes.set(key, now)
 }
 
 export async function performSearch(
@@ -133,6 +144,7 @@ Guidelines:
 
 export function clearSearchCache(): void {
   searchCache.clear()
+  accessTimes.clear()
 }
 
 export function getSearchCacheSize(): number {

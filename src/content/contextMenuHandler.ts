@@ -5,6 +5,10 @@
  * Provides content to the chat overlay for user-driven page reading.
  */
 
+import { createLogger } from '../lib/debug'
+
+const log = createLogger('ContextMenu')
+
 // Track the last right-clicked element
 let lastRightClickedElement: Element | null = null
 
@@ -66,7 +70,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'CONTEXT_MENU_SELECTION') {
     const text = msg.payload?.text
     if (text) {
-      console.log('[ContextMenu] Selection received:', text.slice(0, 100) + '...')
+      log.log('Selection received:', text.slice(0, 100) + '...')
       openChatWithContext(text, 'selection')
     }
     sendResponse({ success: true })
@@ -77,13 +81,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (lastRightClickedElement) {
       const text = extractElementContent(lastRightClickedElement)
       if (text) {
-        console.log('[ContextMenu] Element content extracted:', text.slice(0, 100) + '...')
+        log.log('Element content extracted:', text.slice(0, 100) + '...')
         openChatWithContext(text, 'element')
       } else {
-        console.warn('[ContextMenu] No content found in clicked element')
+        log.warn('No content found in clicked element')
       }
     } else {
-      console.warn('[ContextMenu] No element tracked from right-click')
+      log.warn('No element tracked from right-click')
     }
     sendResponse({ success: true })
     return true
@@ -93,6 +97,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   return false
 })
 
-console.log('[ContextMenu] Handler initialized')
+log.log('Handler initialized')
 
 export {}

@@ -9,9 +9,12 @@
  * - Feedback tracking
  */
 
+import { createLogger } from '../debug'
 import type { Memory } from './types'
 import { getFollowUpCandidates, type FollowUpCandidate, extractSubject } from './followUp'
 import { findContextMatches, type PageContext } from './contextMatcher'
+
+const log = createLogger('ProactiveController')
 
 // Proactive action types
 export type ProactiveActionType = 'welcome_back' | 'follow_up' | 'context_match' | 'random_recall'
@@ -142,7 +145,7 @@ export class ProactiveMemoryController {
         }
       }
     } catch (err) {
-      console.warn('[ProactiveController] Failed to load state:', err)
+      log.warn('Failed to load state:', err)
     }
   }
 
@@ -160,7 +163,7 @@ export class ProactiveMemoryController {
         },
       })
     } catch (err) {
-      console.warn('[ProactiveController] Failed to save state:', err)
+      log.warn('Failed to save state:', err)
     }
   }
 
@@ -482,7 +485,7 @@ export async function loadProactiveHistory(): Promise<ProactiveHistoryEntry[]> {
     }
     return []
   } catch (err) {
-    console.warn('[ProactiveController] Failed to load history:', err)
+    log.warn('Failed to load history:', err)
     return []
   }
 }

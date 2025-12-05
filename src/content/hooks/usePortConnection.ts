@@ -13,6 +13,9 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useScopedChatStore } from '../stores/scopedChat.store'
 import { setActivePort } from '../portManager'
+import { createLogger } from '../../lib/debug'
+
+const log = createLogger('Port')
 
 export interface UsePortConnectionOptions {
   onChunk?: (delta: string) => void
@@ -62,7 +65,7 @@ export function usePortConnection(options: UsePortConnectionOptions = {}) {
         try {
           portRef.current.postMessage({ type: 'HEARTBEAT' })
         } catch (err) {
-          console.log('[Port] Heartbeat failed, will reconnect')
+          log.log('Heartbeat failed, will reconnect')
           clearHeartbeat()
         }
       }
@@ -72,18 +75,18 @@ export function usePortConnection(options: UsePortConnectionOptions = {}) {
   const flushQueue = useCallback(() => {
     if (!portRef.current || messageQueueRef.current.length === 0) return
     
-    console.log(`[Port] Flushing ${messageQueueRef.current.length} queued messages`)
+    log.log(`Flushing ${messageQueueRef.current.length} queued messages`)
     
     while (messageQueueRef.current.length > 0) {
       const msg = messageQueueRef.current.shift()!
       try {
         portRef.current.postMessage(msg)
         if (chrome.runtime.lastError) {
-          console.error('[Port] Failed to send queued message:', chrome.runtime.lastError)
+          log.error('Failed to send queued message:', chrome.runtime.lastError)
           break
         }
       } catch (err) {
-        console.error('[Port] Exception sending queued message:', err)
+        log.error('Exception sending queued message:', err)
         break
       }
     }
@@ -92,7 +95,7 @@ export function usePortConnection(options: UsePortConnectionOptions = {}) {
   const handleMessage = useCallback((msg: any) => {
     const requestId = msg.payload?.requestId
     
-    console.log('[Port] Received message:', msg.type, msg.payload)
+    log.log('Received message:', msg.type, msg.payload)
     
     switch (msg.type) {
       case 'STREAM_CHUNK':
@@ -101,7 +104,7 @@ export function usePortConnection(options: UsePortConnectionOptions = {}) {
         break
         
       case 'STREAM_END':
-        console.log('[Port] Stream ended, finalizing message')
+        log.log('Stream ended, finalizing message')
         if (requestId) {
           processedRequestIdsRef.current.add(requestId)
           // Clean up old IDs (keep last 100)
@@ -128,14 +131,14 @@ export function usePortConnection(options: UsePortConnectionOptions = {}) {
   }, [updateStreamingMessage, finalizeStreamingMessage, setError, setStatus, options])
   
   const handleDisconnect = useCallback(() => {
-    console.log('[Port] Disconnected (normal), will reconnect...')
+    log.log('Disconnected (normal), will reconnect...')
     setConnected(false)
     portRef.current = null
     clearHeartbeat()
     
     // Exponential backoff with cap
     const delay = backoffDelayRef.current
-    console.log(`[Port] Reconnecting in ${delay}ms`)
+    log.log(`Reconnecting in ${delay}ms`)
     
     reconnectTimeoutRef.current = window.setTimeout(() => {
       connect()
@@ -152,7 +155,7 @@ export function usePortConnection(options: UsePortConnectionOptions = {}) {
     }
     
     try {
-      console.log('[Port] Connecting...')
+      log.log('Connecting...')
       const port = chrome.runtime.connect({ name: 'yumi-chat' })
       portRef.current = port
       setActivePort(port) // Make port available globally
@@ -184,9 +187,9 @@ export function usePortConnection(options: UsePortConnectionOptions = {}) {
       // Flush any queued messages
       flushQueue()
       
-      console.log('[Port] ✅ Connected')
+      log.log('✅ Connected')
     } catch (err) {
-      console.error('[Port] Connection failed:', err)
+      log.error('Connection failed:', err)
       setConnected(false)
       handleDisconnect()
     }
@@ -243,7 +246,7 @@ export function usePortConnection(options: UsePortConnectionOptions = {}) {
     }
     
     if (!portRef.current || !connected) {
-      console.log('[Port] Queueing message (not connected)')
+      log.log('Queueing message (not connected)')
       
       // Add to queue with size limit
       if (messageQueueRef.current.length < MAX_QUEUE_SIZE) {
@@ -252,7 +255,7 @@ export function usePortConnection(options: UsePortConnectionOptions = {}) {
           timestamp: Date.now()
         })
       } else {
-        console.warn('[Port] Message queue full, dropping message')
+        log.warn('Message queue full, dropping message')
       }
       
       return false
@@ -262,13 +265,13 @@ export function usePortConnection(options: UsePortConnectionOptions = {}) {
       portRef.current.postMessage(message)
       
       if (chrome.runtime.lastError) {
-        console.error('[Port] Send failed:', chrome.runtime.lastError)
+        log.error('Send failed:', chrome.runtime.lastError)
         return false
       }
       
       return true
     } catch (err) {
-      console.error('[Port] Send exception:', err)
+      log.error('Send exception:', err)
       return false
     }
   }, [connected])
@@ -278,7 +281,7 @@ export function usePortConnection(options: UsePortConnectionOptions = {}) {
     // BFCache restoration
     const handlePageShow = (e: PageTransitionEvent) => {
       if (e.persisted && !portRef.current) {
-        console.log('[Port] BFCache restore, reconnecting')
+        log.log('BFCache restore, reconnecting')
         connect()
       }
     }
@@ -286,7 +289,7 @@ export function usePortConnection(options: UsePortConnectionOptions = {}) {
     // Visibility change (tab becomes visible)
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && !portRef.current) {
-        console.log('[Port] Tab visible, reconnecting')
+        log.log('Tab visible, reconnecting')
         connect()
       }
     }
@@ -298,7 +301,7 @@ export function usePortConnection(options: UsePortConnectionOptions = {}) {
     history.pushState = function(...args) {
       const result = originalPushState.apply(this, args)
       if (!portRef.current) {
-        console.log('[Port] pushState detected, reconnecting')
+        log.log('pushState detected, reconnecting')
         connect()
       }
       return result
@@ -307,7 +310,7 @@ export function usePortConnection(options: UsePortConnectionOptions = {}) {
     history.replaceState = function(...args) {
       const result = originalReplaceState.apply(this, args)
       if (!portRef.current) {
-        console.log('[Port] replaceState detected, reconnecting')
+        log.log('replaceState detected, reconnecting')
         connect()
       }
       return result
@@ -315,7 +318,7 @@ export function usePortConnection(options: UsePortConnectionOptions = {}) {
     
     const handlePopState = () => {
       if (!portRef.current) {
-        console.log('[Port] popstate detected, reconnecting')
+        log.log('popstate detected, reconnecting')
         connect()
       }
     }
@@ -342,6 +345,7 @@ export function usePortConnection(options: UsePortConnectionOptions = {}) {
   return {
     connected,
     sendMessage,
+    sendViaPort: sendMessage, // Alias for ChatOverlay compatibility
     reconnect: connect
   }
 }

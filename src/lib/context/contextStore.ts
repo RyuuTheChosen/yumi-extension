@@ -5,6 +5,9 @@
  */
 
 import { create } from 'zustand'
+import { createLogger } from '../debug'
+
+const log = createLogger('ContextStore')
 import type {
   PageContext,
   ContextState,
@@ -127,7 +130,7 @@ export const useContextStore = create<ContextState>((set, get) => ({
       return context
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-      console.error('[ContextStore] Extraction failed:', error)
+      log.error('Extraction failed:', error)
       set({ isExtracting: false, lastError: errorMessage })
       throw error
     }
@@ -142,7 +145,7 @@ export const useContextStore = create<ContextState>((set, get) => ({
   clearCache: (): void => {
     contextCache.clear()
     set({ currentContext: null })
-    console.log('[ContextStore] Cache cleared')
+    log.log('Cache cleared')
   },
 
   // Invalidate specific URL
@@ -151,13 +154,13 @@ export const useContextStore = create<ContextState>((set, get) => ({
     if (get().currentContext?.url === url) {
       set({ currentContext: null })
     }
-    console.log('[ContextStore] Invalidated:', url)
+    log.log('Invalidated:', url)
   },
 
   // Set auto-extract level
   setAutoExtractLevel: (level: 0 | 1 | 2): void => {
     set({ autoExtractLevel: level })
-    console.log('[ContextStore] Auto-extract level set to:', level)
+    log.log('Auto-extract level set to:', level)
   },
 
   // Update privacy settings
@@ -165,7 +168,7 @@ export const useContextStore = create<ContextState>((set, get) => ({
     set(state => ({
       privacySettings: { ...state.privacySettings, ...settings },
     }))
-    console.log('[ContextStore] Privacy settings updated')
+    log.log('Privacy settings updated')
   },
 }))
 
@@ -181,7 +184,7 @@ export async function autoExtractOnNavigation(): Promise<void> {
   try {
     await state.extract({ level: state.autoExtractLevel })
   } catch (error) {
-    console.warn('[ContextStore] Auto-extraction failed:', error)
+    log.warn('Auto-extraction failed:', error)
   }
 }
 

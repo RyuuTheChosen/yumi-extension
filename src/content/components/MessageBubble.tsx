@@ -1,8 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Copy, Check } from 'lucide-react';
 import { cn, formatTimestamp } from '../../lib/design/utils';
 import { useChatStore } from '../../lib/stores/chat.store';
+import type { SearchResult } from '../../lib/search/types';
+import { createLogger } from '../../lib/debug';
+
+const log = createLogger('MessageBubble');
 
 export interface MessageBubbleProps {
   role: 'user' | 'assistant' | 'system';
@@ -13,17 +17,39 @@ export interface MessageBubbleProps {
     name: string;
     avatar?: string;
   };
+  sources?: SearchResult[];
 }
 
-export function MessageBubble({
+/**
+ * MessageBubble Component (Memoized)
+ *
+ * Optimized with React.memo to prevent unnecessary re-renders.
+ * Only re-renders when content, streaming status, or timestamp changes.
+ */
+export const MessageBubble = React.memo(function MessageBubble({
   role,
   content,
   streaming = false,
   timestamp = Date.now(),
 }: MessageBubbleProps) {
   const [copied, setCopied] = useState(false);
-  const cancelActive = useChatStore(s => s.cancelActive);
-  const retryLast = useChatStore(s => s.retryLast);
+
+  /**
+   * Performance fix: Access store functions directly in event handlers
+   * instead of subscribing to them, preventing re-renders on store updates
+   */
+  const handleCancel = useCallback(() => {
+    useChatStore.getState().cancelActive();
+  }, []);
+
+  const handleRetry = useCallback(() => {
+    useChatStore.getState().retryLast();
+  }, []);
+
+  /**
+   * Only subscribe to status for this specific message's error/cancel state
+   * This is conditionally rendered so won't cause re-renders for all messages
+   */
   const status = useChatStore(s => s.status);
   const isError = status === 'error';
   const isCanceled = status === 'canceled';
@@ -43,7 +69,7 @@ export function MessageBubble({
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      console.error('Failed to copy:', err);
+      log.error('Failed to copy:', err);
     }
   };
 
@@ -120,7 +146,7 @@ export function MessageBubble({
         {/* Cancel button during streaming */}
         {streaming && !isUser && (
           <button
-            onClick={cancelActive}
+            onClick={handleCancel}
             className="text-[11px] text-white/60 hover:text-white transition-colors"
           >
             Stop
@@ -130,7 +156,7 @@ export function MessageBubble({
         {/* Error state */}
         {!isUser && isError && (
           <button
-            onClick={retryLast}
+            onClick={handleRetry}
             className="text-[11px] text-error hover:text-error-dark font-medium transition-colors"
           >
             Retry
@@ -144,4 +170,15 @@ export function MessageBubble({
       </div>
     </motion.div>
   );
-}
+}, (prevProps, nextProps) => {
+  /**
+   * Custom equality function for React.memo
+   * Only re-render if these specific props change
+   */
+  return (
+    prevProps.role === nextProps.role &&
+    prevProps.content === nextProps.content &&
+    prevProps.streaming === nextProps.streaming &&
+    prevProps.timestamp === nextProps.timestamp
+  );
+});

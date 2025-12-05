@@ -52,7 +52,11 @@ export default defineConfig(({ mode }): UserConfig => {
       viteStaticCopy({
         targets: [
           { src: 'manifest.json', dest: '.' },
-          { src: 'public/**', dest: '.' }
+          // Copy public folder contents explicitly to avoid duplicates
+          { src: 'public/companions', dest: '.' },
+          { src: 'public/cubism-sdk', dest: '.' },
+          { src: 'public/icons', dest: '.' },
+          { src: 'public/avatar-yumi.png', dest: '.' }
         ],
         hook: 'writeBundle'
       })

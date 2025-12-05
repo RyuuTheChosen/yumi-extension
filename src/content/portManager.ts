@@ -3,11 +3,15 @@
  * The port connection is established by usePortConnection hook in the chat overlay
  */
 
+import { createLogger } from '../lib/debug'
+
+const log = createLogger('PortManager')
+
 let activePort: chrome.runtime.Port | null = null
 
 export function setActivePort(port: chrome.runtime.Port | null) {
   activePort = port
-  console.log('[PortManager] Active port:', port ? 'connected' : 'disconnected')
+  log.log('Active port:', port ? 'connected' : 'disconnected')
 }
 
 export function getActivePort(): chrome.runtime.Port | null {
@@ -16,7 +20,7 @@ export function getActivePort(): chrome.runtime.Port | null {
 
 export function sendPortMessage(message: any): boolean {
   if (!activePort) {
-    console.warn('[PortManager] No active port, cannot send:', message.type)
+    log.warn('No active port, cannot send:', message.type)
     return false
   }
 
@@ -24,7 +28,7 @@ export function sendPortMessage(message: any): boolean {
     activePort.postMessage(message)
     return true
   } catch (error) {
-    console.error('[PortManager] Failed to send message:', error)
+    log.error('Failed to send message:', error)
     return false
   }
 }

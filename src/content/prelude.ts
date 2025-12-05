@@ -1,6 +1,10 @@
 // Prelude script - Runs FIRST before Cubism SDK loads
 // Configures Module.locateFile to tell Emscripten where to find WASM files
 
+import { createLogger } from '../lib/debug'
+
+const log = createLogger('Prelude')
+
 declare global {
   interface Window {
     Module?: {
@@ -18,11 +22,11 @@ if (!window.Module) {
 // This runs BEFORE live2dcubismcore.min.js loads
 window.Module.locateFile = (path: string) => {
   const url = chrome.runtime.getURL('cubism-sdk/' + path)
-  console.log('[Yumi Prelude] Module.locateFile:', path, '→', url)
+  log.log('Module.locateFile:', path, '→', url)
   return url
 }
 
-console.log('[Yumi Prelude] ✅ Module.locateFile configured for WASM')
+log.log('Module.locateFile configured for WASM')
 
 // Export to make it a valid ES module
 export {}

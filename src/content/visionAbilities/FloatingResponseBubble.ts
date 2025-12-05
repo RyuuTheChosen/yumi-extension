@@ -11,6 +11,9 @@
  */
 
 import { isChatOverlayOpen } from '../chatState'
+import { createLogger } from '../../lib/debug'
+
+const log = createLogger('FloatingBubble')
 
 export interface FloatingBubbleConfig {
   position: { x: number; y: number }
@@ -39,7 +42,7 @@ export class FloatingResponseBubble {
   show(config: FloatingBubbleConfig, requestId: string): boolean {
     // Don't show bubble if chat overlay is open
     if (isChatOverlayOpen()) {
-      console.log('[FloatingBubble] Chat overlay is open, skipping bubble')
+      log.log('Chat overlay is open, skipping bubble')
       return false
     }
 
@@ -166,7 +169,7 @@ export class FloatingResponseBubble {
       }
     })
 
-    console.log('[FloatingBubble] Shown at', { x, y, requestId })
+    log.log('Shown at', { x, y, requestId })
     return true
   }
   
@@ -241,7 +244,7 @@ export class FloatingResponseBubble {
       this.contentEl.style.fontStyle = 'italic'
     }
 
-    console.log(`[FloatingBubble] Stage updated to: ${stage}`)
+    log.log(`Stage updated to: ${stage}`)
   }
 
   /**
@@ -271,7 +274,7 @@ export class FloatingResponseBubble {
   finalize(autoFadeMs?: number) {
     if (!this.isVisible) return
 
-    console.log('[FloatingBubble] Stream complete, starting fade timer')
+    log.log('Stream complete, starting fade timer')
 
     // Start auto-fade timer
     const fadeDelay = autoFadeMs || this.config?.autoFadeMs || 12000

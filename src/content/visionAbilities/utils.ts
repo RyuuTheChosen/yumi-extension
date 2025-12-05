@@ -1,3 +1,7 @@
+import { createLogger } from '../../lib/debug'
+
+const log = createLogger('VisionUtils')
+
 /**
  * Convert image to base64 (with size limit)
  * Handles CORS-protected images by fetching them first
@@ -136,7 +140,7 @@ export function getSurroundingText(selection: Selection): string {
 export function getAvatarPosition(): { x: number; y: number } | null {
   const avatarWrapper = document.querySelector('.yumi-overlay-wrapper') as HTMLElement
   if (!avatarWrapper) {
-    console.warn('[Vision Utils] Avatar wrapper not found')
+    log.warn('Avatar wrapper not found')
     return null
   }
   

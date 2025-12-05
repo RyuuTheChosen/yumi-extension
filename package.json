@@ -15,9 +15,13 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
     "zip": "npm run build && cd dist && zip -r ../yumi-extension-dist.zip ."
   },
   "devDependencies": {
+    "@playwright/test": "^1.57.0",
     "@rollup/plugin-commonjs": "^29.0.0",
     "@types/chrome": "^0.0.263",
     "@types/node": "^20.10.6",

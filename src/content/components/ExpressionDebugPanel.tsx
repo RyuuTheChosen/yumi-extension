@@ -6,6 +6,9 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react'
+import { createLogger } from '../../lib/debug'
+
+const log = createLogger('ExpressionDebug')
 
 interface ParameterConfig {
   id: string
@@ -68,7 +71,7 @@ export function ExpressionDebugPanel() {
       try {
         setPresets(JSON.parse(stored))
       } catch (e) {
-        console.error('[ExpressionDebug] Failed to load presets:', e)
+        log.error('Failed to load presets:', e)
       }
     }
   }, [])
@@ -138,7 +141,7 @@ export function ExpressionDebugPanel() {
 
     savePresetsToStorage(newPresets)
     setPresetName('')
-    console.log(`[ExpressionDebug] Saved preset: ${newPreset.name}`, newPreset.values)
+    log.log(`Saved preset: ${newPreset.name}`, newPreset.values)
   }
 
   // Load preset
@@ -187,7 +190,7 @@ ${Object.entries(values)
   .join(',\n')}
 }`
     navigator.clipboard.writeText(code)
-    console.log('[ExpressionDebug] Copied to clipboard')
+    log.log('Copied to clipboard')
   }
 
   // Handle closing the panel

@@ -1,6 +1,9 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { debouncedChromeStorage } from '../zustandChromeStorage'
+import { createLogger } from '../debug'
+
+const log = createLogger('Settings')
 
 // Hub user info after Discord auth
 interface HubUser {
@@ -19,7 +22,6 @@ interface HubQuota {
 }
 
 interface SettingsState {
-  relayUrl: string
   model: string  // User's preferred model (Hub routes to appropriate provider)
   // AI Hub settings (required for all API calls)
   hubUrl: string
@@ -51,7 +53,6 @@ interface SettingsState {
   proactiveWelcomeBack: boolean
   proactiveCooldownMins: number
   proactiveMaxPerSession: number
-  setRelayUrl: (url: string) => void
   setModel: (m: string) => void
   // Hub actions
   setHubUrl: (url: string) => void
@@ -87,7 +88,6 @@ interface SettingsState {
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set, get) => ({
-      relayUrl: '',
       model: 'gpt-4o-mini',  // Default model (Hub routes to appropriate provider)
       enableLive2D: true, // Avatar enabled by default
       live2DModelUrl: '/companions/yumi/model/model.model3.json',
@@ -116,7 +116,6 @@ export const useSettingsStore = create<SettingsState>()(
       proactiveWelcomeBack: true,
       proactiveCooldownMins: 10,
       proactiveMaxPerSession: 10,
-      setRelayUrl: (url) => set({ relayUrl: url }),
       setModel: (m) => set({ model: m }),
       setEnableLive2D: (enabled) => set({ enableLive2D: enabled }),
       setLive2DModelUrl: (url) => set({ live2DModelUrl: url }),
@@ -149,7 +148,7 @@ export const useSettingsStore = create<SettingsState>()(
             headers: { 'Authorization': `Bearer ${hubAccessToken}` }
           })
           if (!res.ok) {
-            console.error('[Settings] Failed to refresh quota')
+            log.error('Failed to refresh quota')
             return
           }
           const data = await res.json()
@@ -168,12 +167,12 @@ export const useSettingsStore = create<SettingsState>()(
             }
             // Only update if isAdmin changed
             if (updatedUser.isAdmin !== hubUser.isAdmin) {
-              console.log('[Settings] Synced user info from API, isAdmin:', updatedUser.isAdmin)
+              log.log('Synced user info from API, isAdmin:', updatedUser.isAdmin)
               set({ hubUser: updatedUser })
             }
           }
         } catch (err) {
-          console.error('[Settings] Hub quota refresh failed:', err)
+          log.error('Hub quota refresh failed:', err)
         }
       },
       // TTS setters
@@ -195,7 +194,6 @@ export const useSettingsStore = create<SettingsState>()(
       name: 'settings-store',
       storage: createJSONStorage(() => debouncedChromeStorage),
       partialize: (s) => ({
-        relayUrl: s.relayUrl,
         model: s.model,
         enableLive2D: s.enableLive2D,
         live2DModelUrl: s.live2DModelUrl,
@@ -358,18 +356,18 @@ export const useSettingsStore = create<SettingsState>()(
         return { ...base, state }
       },
       onRehydrateStorage: (state) => {
-        console.log('[Settings Store] Hydration starts')
+        log.log('Hydration starts')
         return (state, error) => {
           if (error) {
-            console.error('[Settings Store] Hydration failed:', error)
+            log.error('Hydration failed:', error)
           } else {
-            console.log('[Settings Store] Hydration finished successfully')
+            log.log('Hydration finished successfully')
             // Validate critical fields (read-only check)
             if (state) {
               const hasModel = typeof state.model === 'string'
               const hasLive2D = typeof state.enableLive2D === 'boolean'
               const hasHubUrl = typeof state.hubUrl === 'string'
-              console.log('[Settings Store] State validation:', { hasModel, hasLive2D, hasHubUrl })
+              log.log('State validation:', { hasModel, hasLive2D, hasHubUrl })
             }
           }
         }

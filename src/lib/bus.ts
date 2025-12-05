@@ -31,6 +31,10 @@ interface EventMap {
   streamRetry: (info: { attempt: number; nextDelayMs: number; requestId?: string }) => void
   streamCancel: (meta?: { requestId?: string }) => void
   avatar: (payload: AvatarEvent) => void
+  // Companion events
+  'companion:loading': (slug: string) => void
+  'companion:changed': (companion: unknown) => void
+  'companion:error': (error: { message: string; slug?: string }) => void
   // Proactive system events
   'page:ready': (context: PageReadyContext) => void
   'proactive:triggered': (action: ProactiveActionEvent) => void
@@ -41,12 +45,45 @@ interface EventMap {
 
 const nano = createNanoEvents<EventMap>()
 
+/**
+ * Subscription tracking for memory leak prevention
+ * WeakMap allows garbage collection of callbacks when no longer referenced
+ */
+const subscriptions = new WeakMap<Function, () => void>()
+const allUnsubscribers: Array<() => void> = []
+
 export const bus = {
+  /**
+   * Subscribe to an event
+   * @returns Unsubscribe function - MUST be called to prevent memory leaks
+   */
   on<E extends keyof EventMap>(event: E, cb: EventMap[E]) {
-    return nano.on(event, cb as any)
+    const unsub = nano.on(event, cb as any)
+
+    // Track subscription for cleanup
+    subscriptions.set(cb, unsub)
+    allUnsubscribers.push(unsub)
+
+    // Return enhanced unsubscribe that also removes from tracking
+    return () => {
+      unsub()
+      subscriptions.delete(cb)
+      const index = allUnsubscribers.indexOf(unsub)
+      if (index > -1) allUnsubscribers.splice(index, 1)
+    }
   },
+
   emit<E extends keyof EventMap>(event: E, ...args: Parameters<EventMap[E]>) {
     nano.emit(event, ...(args as any))
+  },
+
+  /**
+   * Emergency cleanup - unsubscribe all listeners
+   * Use only when absolutely necessary (e.g., critical error state)
+   */
+  cleanup() {
+    allUnsubscribers.forEach(unsub => unsub())
+    allUnsubscribers.length = 0
   }
 }
 

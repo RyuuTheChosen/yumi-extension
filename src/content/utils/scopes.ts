@@ -1,9 +1,13 @@
 /**
  * Scope System for Conversation Threading
- * 
+ *
  * Enables per-origin conversation isolation (gmail.com ≠ github.com)
  * while supporting global cross-site threads when needed.
  */
+
+import { createLogger } from '../../lib/debug'
+
+const log = createLogger('Scopes')
 
 export type ScopeMode = 'origin' | 'global' | 'manual'
 
@@ -32,7 +36,7 @@ export function createOriginScope(): Scope {
       name: origin
     }
   } catch (err) {
-    console.warn('[Scopes] Failed to create origin scope:', err)
+    log.warn('Failed to create origin scope:', err)
     return createGlobalScope()
   }
 }
@@ -73,7 +77,7 @@ export function getCurrentScope(): Scope {
       }
     }
   } catch (err) {
-    console.warn('[Scopes] Failed to load active scope:', err)
+    log.warn('Failed to load active scope:', err)
   }
   
   // Default to origin scope
@@ -87,7 +91,7 @@ export function setCurrentScope(scope: Scope): void {
   try {
     sessionStorage.setItem('yumi-active-scope', JSON.stringify(scope))
   } catch (err) {
-    console.warn('[Scopes] Failed to save active scope:', err)
+    log.warn('Failed to save active scope:', err)
   }
 }
 

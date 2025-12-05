@@ -10,6 +10,9 @@ import { create } from 'zustand'
 import type { Memory, MemoryType, MemoryState, RetrievalOptions } from './types'
 import { MEMORY_LIMITS, MEMORY_HALF_LIFE } from './types'
 import { findSimilarMemory } from './db'
+import { createLogger } from '../debug'
+
+const log = createLogger('MemoryStore')
 
 /**
  * Send message to background script for memory operations
@@ -62,7 +65,7 @@ export async function migrateLocalMemories(): Promise<number> {
       return 0
     }
 
-    console.log(`[MemoryStore] Found ${localMemories.length} local memories to migrate`)
+    log.log(` Found ${localMemories.length} local memories to migrate`)
 
     // Send to background for storage in extension IndexedDB
     await sendMemoryMessage('MEMORY_ADD_BATCH', { memories: localMemories })
@@ -77,16 +80,16 @@ export async function migrateLocalMemories(): Promise<number> {
     })
 
     localDB.close()
-    console.log(`[MemoryStore] Migrated ${localMemories.length} memories to extension storage`)
+    log.log(` Migrated ${localMemories.length} memories to extension storage`)
     return localMemories.length
 
   } catch (err) {
     // No local DB or migration failed - log the actual reason
     const message = err instanceof Error ? err.message : String(err)
     if (message === 'No local DB') {
-      console.log('[MemoryStore] No local DB found to migrate')
+      log.log(' No local DB found to migrate')
     } else {
-      console.log('[MemoryStore] Migration skipped:', message)
+      log.log(' Migration skipped:', message)
     }
     return 0
   }
@@ -118,6 +121,13 @@ export function calculateDecayedImportance(memory: Memory): number {
   const accessBoost = Math.min(memory.accessCount * 0.05, 0.3)
 
   return Math.min(memory.importance * decayFactor + accessBoost, 1)
+}
+
+/**
+ * Generate composite key for memory index (O(1) lookup)
+ */
+function getMemoryIndexKey(type: MemoryType, content: string): string {
+  return `${type}:${content.toLowerCase()}`
 }
 
 interface MemoryStore extends MemoryState {
@@ -155,6 +165,20 @@ interface MemoryStore extends MemoryState {
   }
 }
 
+// Memory index for O(1) duplicate detection (type:content -> Memory)
+const memoryIndex = new Map<string, Memory>()
+
+/**
+ * Rebuild the memory index from current memories
+ */
+function rebuildIndex(memories: Memory[]): void {
+  memoryIndex.clear()
+  for (const memory of memories) {
+    const key = getMemoryIndexKey(memory.type, memory.content)
+    memoryIndex.set(key, memory)
+  }
+}
+
 export const useMemoryStore = create<MemoryStore>()((set, get) => ({
   // Initial state
   memories: [],
@@ -167,12 +191,13 @@ export const useMemoryStore = create<MemoryStore>()((set, get) => ({
   loadMemories: async () => {
     try {
       const response = await sendMemoryMessage<{ memories: Memory[] }>('MEMORY_GET_ALL')
+      rebuildIndex(response.memories)
       set({ memories: response.memories, isLoaded: true, lastError: null })
-      console.log(`[MemoryStore] Loaded ${response.memories.length} memories via background`)
+      log.log(` Loaded ${response.memories.length} memories via background`)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to load memories'
       set({ lastError: message, isLoaded: true })
-      console.error('[MemoryStore] Failed to load memories:', error)
+      log.error(' Failed to load memories:', error)
     }
   },
 
@@ -180,15 +205,12 @@ export const useMemoryStore = create<MemoryStore>()((set, get) => ({
   addMemory: async (memoryData) => {
     const now = Date.now()
 
-    // Check for duplicates in local state
-    const { memories } = get()
-    const existing = memories.find(m =>
-      m.type === memoryData.type &&
-      m.content.toLowerCase() === memoryData.content.toLowerCase()
-    )
+    // O(1) duplicate check using index
+    const indexKey = getMemoryIndexKey(memoryData.type, memoryData.content)
+    const existing = memoryIndex.get(indexKey)
 
     if (existing) {
-      console.log('[MemoryStore] Similar memory exists, updating instead:', existing.id)
+      log.log(' Similar memory exists, updating instead:', existing.id)
       const updated: Memory = {
         ...existing,
         importance: Math.max(existing.importance, memoryData.importance),
@@ -197,6 +219,7 @@ export const useMemoryStore = create<MemoryStore>()((set, get) => ({
         accessCount: existing.accessCount + 1,
       }
       await sendMemoryMessage('MEMORY_ADD', { memory: updated })
+      memoryIndex.set(indexKey, updated)
       set((state) => ({
         memories: state.memories.map((m) => (m.id === existing.id ? updated : m)),
       }))
@@ -212,12 +235,13 @@ export const useMemoryStore = create<MemoryStore>()((set, get) => ({
     }
 
     await sendMemoryMessage('MEMORY_ADD', { memory })
+    memoryIndex.set(indexKey, memory)
     set((state) => ({ memories: [...state.memories, memory] }))
 
     // Check if pruning needed
     await get().pruneIfNeeded()
 
-    console.log(`[MemoryStore] Added memory: ${memory.type} - "${memory.content.slice(0, 50)}..."`)
+    log.log(` Added memory: ${memory.type} - "${memory.content.slice(0, 50)}..."`)
     return memory
   },
 
@@ -226,16 +250,13 @@ export const useMemoryStore = create<MemoryStore>()((set, get) => ({
     if (memoriesData.length === 0) return []
 
     const now = Date.now()
-    const { memories: currentMemories } = get()
     const newMemories: Memory[] = []
     const updatedMemories: Memory[] = []
 
     for (const memoryData of memoriesData) {
-      // Check for duplicates in local state
-      const existing = currentMemories.find(m =>
-        m.type === memoryData.type &&
-        m.content.toLowerCase() === memoryData.content.toLowerCase()
-      )
+      // O(1) duplicate check using index
+      const indexKey = getMemoryIndexKey(memoryData.type, memoryData.content)
+      const existing = memoryIndex.get(indexKey)
 
       if (existing) {
         const updated: Memory = {
@@ -246,6 +267,7 @@ export const useMemoryStore = create<MemoryStore>()((set, get) => ({
           accessCount: existing.accessCount + 1,
         }
         updatedMemories.push(updated)
+        memoryIndex.set(indexKey, updated)
       } else {
         const memory: Memory = {
           ...memoryData,
@@ -255,6 +277,7 @@ export const useMemoryStore = create<MemoryStore>()((set, get) => ({
           accessCount: 0,
         }
         newMemories.push(memory)
+        memoryIndex.set(indexKey, memory)
       }
     }
 
@@ -282,39 +305,55 @@ export const useMemoryStore = create<MemoryStore>()((set, get) => ({
     // Check if pruning needed
     await get().pruneIfNeeded()
 
-    console.log(
-      `[MemoryStore] Added ${newMemories.length} new, updated ${updatedMemories.length} existing memories`
+    log.log(
+      `Added ${newMemories.length} new, updated ${updatedMemories.length} existing memories`
     )
     return [...newMemories, ...updatedMemories]
   },
 
   // Remove a memory
   removeMemory: async (id) => {
+    const { memories } = get()
+    const memory = memories.find(m => m.id === id)
+    if (memory) {
+      const indexKey = getMemoryIndexKey(memory.type, memory.content)
+      memoryIndex.delete(indexKey)
+    }
     await sendMemoryMessage('MEMORY_DELETE', { id })
     set((state) => ({
       memories: state.memories.filter((m) => m.id !== id),
     }))
-    console.log(`[MemoryStore] Removed memory: ${id}`)
+    log.log(` Removed memory: ${id}`)
   },
 
   // Remove all memories of a type (delete one by one via background)
   removeMemoriesByType: async (type) => {
     const { memories } = get()
-    const idsToDelete = memories.filter(m => m.type === type).map(m => m.id)
-    for (const id of idsToDelete) {
-      await sendMemoryMessage('MEMORY_DELETE', { id })
+    const toDelete = memories.filter(m => m.type === type)
+
+    // Remove from index
+    for (const memory of toDelete) {
+      const indexKey = getMemoryIndexKey(memory.type, memory.content)
+      memoryIndex.delete(indexKey)
     }
+
+    // Delete from storage
+    for (const memory of toDelete) {
+      await sendMemoryMessage('MEMORY_DELETE', { id: memory.id })
+    }
+
     set((state) => ({
       memories: state.memories.filter((m) => m.type !== type),
     }))
-    console.log(`[MemoryStore] Removed all memories of type: ${type}`)
+    log.log(` Removed all memories of type: ${type}`)
   },
 
   // Clear all memories
   clearAll: async () => {
     await sendMemoryMessage('MEMORY_CLEAR_ALL')
+    memoryIndex.clear()
     set({ memories: [], lastExtractionAt: null })
-    console.log('[MemoryStore] Cleared all memories')
+    log.log(' Cleared all memories')
   },
 
   // Mark memory as accessed
@@ -324,6 +363,8 @@ export const useMemoryStore = create<MemoryStore>()((set, get) => ({
     if (memory) {
       const updated = { ...memory, lastAccessed: Date.now(), accessCount: memory.accessCount + 1 }
       await sendMemoryMessage('MEMORY_ADD', { memory: updated })
+      const indexKey = getMemoryIndexKey(memory.type, memory.content)
+      memoryIndex.set(indexKey, updated)
       set((state) => ({
         memories: state.memories.map((m) => m.id === id ? updated : m),
       }))
@@ -339,10 +380,12 @@ export const useMemoryStore = create<MemoryStore>()((set, get) => ({
       const newImportance = Math.max(0, Math.min(1, memory.importance + delta))
       const updated = { ...memory, importance: newImportance }
       await sendMemoryMessage('MEMORY_ADD', { memory: updated })
+      const indexKey = getMemoryIndexKey(memory.type, memory.content)
+      memoryIndex.set(indexKey, updated)
       set((state) => ({
         memories: state.memories.map((m) => m.id === id ? updated : m),
       }))
-      console.log(`[MemoryStore] Updated importance for ${id}: ${memory.importance.toFixed(2)} -> ${newImportance.toFixed(2)}`)
+      log.log(` Updated importance for ${id}: ${memory.importance.toFixed(2)} -> ${newImportance.toFixed(2)}`)
     }
   },
 
@@ -433,7 +476,7 @@ export const useMemoryStore = create<MemoryStore>()((set, get) => ({
       return // No pruning needed
     }
 
-    console.log(`[MemoryStore] Pruning needed: ${count} memories`)
+    log.log(` Pruning needed: ${count} memories`)
 
     // Calculate effective importance for all
     const withImportance = memories.map((m) => ({
@@ -463,7 +506,7 @@ export const useMemoryStore = create<MemoryStore>()((set, get) => ({
       memories: state.memories.filter((m) => !idsToRemove.includes(m.id)),
     }))
 
-    console.log(`[MemoryStore] Pruned ${idsToRemove.length} memories`)
+    log.log(` Pruned ${idsToRemove.length} memories`)
   },
 
   // Get statistics

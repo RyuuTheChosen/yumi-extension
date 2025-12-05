@@ -7,7 +7,9 @@
 
 import type { Memory, MemoryType } from './types'
 import { MEMORY_DB_CONFIG } from './types'
+import { createLogger } from '../debug'
 
+const log = createLogger('MemoryDB')
 const { dbName, storeName, version } = MEMORY_DB_CONFIG
 
 let dbInstance: IDBDatabase | null = null
@@ -22,13 +24,13 @@ async function getDB(): Promise<IDBDatabase> {
     const request = indexedDB.open(dbName, version)
 
     request.onerror = () => {
-      console.error('[MemoryDB] Failed to open database:', request.error)
+      log.error(' Failed to open database:', request.error)
       reject(request.error)
     }
 
     request.onsuccess = () => {
       dbInstance = request.result
-      console.log('[MemoryDB] Database opened')
+      log.log(' Database opened')
       resolve(dbInstance)
     }
 
@@ -44,7 +46,7 @@ async function getDB(): Promise<IDBDatabase> {
         store.createIndex('by-created', 'createdAt', { unique: false })
         store.createIndex('by-accessed', 'lastAccessed', { unique: false })
 
-        console.log('[MemoryDB] Memories store created')
+        log.log(' Memories store created')
       }
     }
   })
@@ -70,7 +72,7 @@ export async function saveMemory(memory: Memory): Promise<void> {
 
     request.onsuccess = () => resolve()
     request.onerror = () => {
-      console.error('[MemoryDB] Failed to save memory:', request.error)
+      log.error(' Failed to save memory:', request.error)
       reject(request.error)
     }
   })
@@ -104,7 +106,7 @@ export async function saveMemories(memories: Memory[]): Promise<void> {
       request.onerror = () => {
         if (!hasError) {
           hasError = true
-          console.error('[MemoryDB] Failed to save memory:', request.error)
+          log.error(' Failed to save memory:', request.error)
           reject(request.error)
         }
       }
@@ -125,7 +127,7 @@ export async function getMemory(id: string): Promise<Memory | null> {
 
     request.onsuccess = () => resolve(request.result || null)
     request.onerror = () => {
-      console.error('[MemoryDB] Failed to get memory:', request.error)
+      log.error(' Failed to get memory:', request.error)
       reject(request.error)
     }
   })
@@ -150,7 +152,7 @@ export async function getAllMemories(): Promise<Memory[]> {
     }
 
     request.onerror = () => {
-      console.error('[MemoryDB] Failed to get all memories:', request.error)
+      log.error(' Failed to get all memories:', request.error)
       reject(request.error)
     }
   })
@@ -176,7 +178,7 @@ export async function getMemoriesByType(type: MemoryType): Promise<Memory[]> {
     }
 
     request.onerror = () => {
-      console.error('[MemoryDB] Failed to get memories by type:', request.error)
+      log.error(' Failed to get memories by type:', request.error)
       reject(request.error)
     }
   })
@@ -195,7 +197,7 @@ export async function deleteMemory(id: string): Promise<void> {
 
     request.onsuccess = () => resolve()
     request.onerror = () => {
-      console.error('[MemoryDB] Failed to delete memory:', request.error)
+      log.error(' Failed to delete memory:', request.error)
       reject(request.error)
     }
   })
@@ -226,7 +228,7 @@ export async function deleteMemoriesByType(type: MemoryType): Promise<number> {
       request.onsuccess = () => {
         deleted++
         if (deleted === memories.length && !hasError) {
-          console.log(`[MemoryDB] Deleted ${deleted} memories of type ${type}`)
+          log.log(` Deleted ${deleted} memories of type ${type}`)
           resolve(deleted)
         }
       }
@@ -234,7 +236,7 @@ export async function deleteMemoriesByType(type: MemoryType): Promise<number> {
       request.onerror = () => {
         if (!hasError) {
           hasError = true
-          console.error('[MemoryDB] Failed to delete memory:', request.error)
+          log.error(' Failed to delete memory:', request.error)
           reject(request.error)
         }
       }
@@ -254,12 +256,12 @@ export async function clearAllMemories(): Promise<void> {
     const request = store.clear()
 
     request.onsuccess = () => {
-      console.log('[MemoryDB] All memories cleared')
+      log.log(' All memories cleared')
       resolve()
     }
 
     request.onerror = () => {
-      console.error('[MemoryDB] Failed to clear memories:', request.error)
+      log.error(' Failed to clear memories:', request.error)
       reject(request.error)
     }
   })
@@ -293,7 +295,7 @@ export async function markMemoryAccessed(id: string): Promise<void> {
   const existing = await getMemory(id)
 
   if (!existing) {
-    console.warn(`[MemoryDB] Cannot mark accessed - memory not found: ${id}`)
+    log.warn(` Cannot mark accessed - memory not found: ${id}`)
     return
   }
 
@@ -316,7 +318,7 @@ export async function getMemoryCount(): Promise<number> {
 
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => {
-      console.error('[MemoryDB] Failed to count memories:', request.error)
+      log.error(' Failed to count memories:', request.error)
       reject(request.error)
     }
   })
@@ -354,7 +356,7 @@ export async function getMemoriesByIds(ids: string[]): Promise<Memory[]> {
       request.onerror = () => {
         if (!hasError) {
           hasError = true
-          console.error('[MemoryDB] Failed to get memory:', request.error)
+          log.error(' Failed to get memory:', request.error)
           reject(request.error)
         }
       }
@@ -455,7 +457,7 @@ export async function findSimilarMemory(
   }
 
   if (bestMatch) {
-    console.log(`[MemoryDB] Found similar memory (${(bestSimilarity * 100).toFixed(0)}% match): "${bestMatch.content.slice(0, 40)}..."`)
+    log.log(` Found similar memory (${(bestSimilarity * 100).toFixed(0)}% match): "${bestMatch.content.slice(0, 40)}..."`)
   }
 
   return bestMatch

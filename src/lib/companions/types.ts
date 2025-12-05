@@ -48,6 +48,11 @@ export const companionExpressionsSchema = z.object({
   onSurprised: z.string().optional(),
 })
 
+// Companion capabilities configuration
+export const companionCapabilitiesSchema = z.object({
+  plugins: z.array(z.string()).default([]),
+})
+
 // Personality configuration (personality.json)
 export const companionPersonalitySchema = z.object({
   name: z.string().min(1).max(48),
@@ -55,6 +60,7 @@ export const companionPersonalitySchema = z.object({
   systemPrompt: z.string().min(10).max(8000),
   voice: companionVoiceSchema.optional(),
   expressions: companionExpressionsSchema.optional(),
+  capabilities: companionCapabilitiesSchema.optional(),
   // Extended content (examples, guidelines) - optional for custom companions
   examples: z.string().optional(),
 })
@@ -64,6 +70,7 @@ export type CompanionModel = z.infer<typeof companionModelSchema>
 export type CompanionManifest = z.infer<typeof companionManifestSchema>
 export type CompanionVoice = z.infer<typeof companionVoiceSchema>
 export type CompanionExpressions = z.infer<typeof companionExpressionsSchema>
+export type CompanionCapabilities = z.infer<typeof companionCapabilitiesSchema>
 export type CompanionPersonality = z.infer<typeof companionPersonalitySchema>
 
 // Loaded companion (fully resolved with URLs)

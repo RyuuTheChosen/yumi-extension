@@ -6,6 +6,9 @@
  */
 
 import type { CompanionManifest, CompanionPersonality } from './types'
+import { createLogger } from '../debug'
+
+const log = createLogger('CompanionDB')
 
 // Database configuration
 const DB_NAME = 'yumi-companions'
@@ -49,13 +52,13 @@ async function getDB(): Promise<IDBDatabase> {
     const request = indexedDB.open(DB_NAME, DB_VERSION)
 
     request.onerror = () => {
-      console.error('[CompanionDB] Failed to open database:', request.error)
+      log.error(' Failed to open database:', request.error)
       reject(request.error)
     }
 
     request.onsuccess = () => {
       dbInstance = request.result
-      console.log('[CompanionDB] Database opened')
+      log.log(' Database opened')
       resolve(dbInstance)
     }
 
@@ -66,14 +69,14 @@ async function getDB(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(COMPANIONS_STORE)) {
         const companionsStore = db.createObjectStore(COMPANIONS_STORE, { keyPath: 'slug' })
         companionsStore.createIndex('by-lastUsed', 'lastUsedAt', { unique: false })
-        console.log('[CompanionDB] Companions store created')
+        log.log(' Companions store created')
       }
 
       // Files store - binary blobs
       if (!db.objectStoreNames.contains(FILES_STORE)) {
         const filesStore = db.createObjectStore(FILES_STORE, { keyPath: 'id' })
         filesStore.createIndex('by-companion', 'companionSlug', { unique: false })
-        console.log('[CompanionDB] Files store created')
+        log.log(' Files store created')
       }
     }
   })
@@ -102,11 +105,11 @@ export async function saveCompanionMetadata(companion: StoredCompanion): Promise
     const request = store.put(companion)
 
     request.onsuccess = () => {
-      console.log(`[CompanionDB] Saved companion metadata: ${companion.slug}`)
+      log.log(` Saved companion metadata: ${companion.slug}`)
       resolve()
     }
     request.onerror = () => {
-      console.error('[CompanionDB] Failed to save companion:', request.error)
+      log.error(' Failed to save companion:', request.error)
       reject(request.error)
     }
   })
@@ -125,7 +128,7 @@ export async function getCompanionMetadata(slug: string): Promise<StoredCompanio
 
     request.onsuccess = () => resolve(request.result || null)
     request.onerror = () => {
-      console.error('[CompanionDB] Failed to get companion:', request.error)
+      log.error(' Failed to get companion:', request.error)
       reject(request.error)
     }
   })
@@ -149,7 +152,7 @@ export async function getInstalledCompanions(): Promise<StoredCompanion[]> {
       resolve(companions)
     }
     request.onerror = () => {
-      console.error('[CompanionDB] Failed to get companions:', request.error)
+      log.error(' Failed to get companions:', request.error)
       reject(request.error)
     }
   })
@@ -186,11 +189,11 @@ export async function deleteCompanionMetadata(slug: string): Promise<void> {
     const request = store.delete(slug)
 
     request.onsuccess = () => {
-      console.log(`[CompanionDB] Deleted companion metadata: ${slug}`)
+      log.log(` Deleted companion metadata: ${slug}`)
       resolve()
     }
     request.onerror = () => {
-      console.error('[CompanionDB] Failed to delete companion:', request.error)
+      log.error(' Failed to delete companion:', request.error)
       reject(request.error)
     }
   })
@@ -233,7 +236,7 @@ export async function saveCompanionFile(
 
     request.onsuccess = () => resolve()
     request.onerror = () => {
-      console.error('[CompanionDB] Failed to save file:', request.error)
+      log.error(' Failed to save file:', request.error)
       reject(request.error)
     }
   })
@@ -256,7 +259,7 @@ export async function getCompanionFile(
 
     request.onsuccess = () => resolve(request.result || null)
     request.onerror = () => {
-      console.error('[CompanionDB] Failed to get file:', request.error)
+      log.error(' Failed to get file:', request.error)
       reject(request.error)
     }
   })
@@ -298,7 +301,7 @@ export function revokeCompanionBlobUrls(companionSlug: string): number {
 
   const count = urls.length
   blobUrlCache.delete(companionSlug)
-  console.log(`[CompanionDB] Revoked ${count} blob URLs for ${companionSlug}`)
+  log.log(` Revoked ${count} blob URLs for ${companionSlug}`)
   return count
 }
 
@@ -317,7 +320,7 @@ export function revokeAllBlobUrls(): number {
 
   blobUrlCache.clear()
   if (total > 0) {
-    console.log(`[CompanionDB] Revoked ${total} total blob URLs`)
+    log.log(` Revoked ${total} total blob URLs`)
   }
   return total
 }
@@ -336,7 +339,7 @@ export async function getCompanionFiles(companionSlug: string): Promise<StoredFi
 
     request.onsuccess = () => resolve(request.result as StoredFile[])
     request.onerror = () => {
-      console.error('[CompanionDB] Failed to get companion files:', request.error)
+      log.error(' Failed to get companion files:', request.error)
       reject(request.error)
     }
   })
@@ -364,7 +367,7 @@ export async function deleteCompanionFiles(companionSlug: string): Promise<numbe
       request.onsuccess = () => {
         deleted++
         if (deleted === files.length && !hasError) {
-          console.log(`[CompanionDB] Deleted ${deleted} files for ${companionSlug}`)
+          log.log(` Deleted ${deleted} files for ${companionSlug}`)
           resolve(deleted)
         }
       }
@@ -372,7 +375,7 @@ export async function deleteCompanionFiles(companionSlug: string): Promise<numbe
       request.onerror = () => {
         if (!hasError) {
           hasError = true
-          console.error('[CompanionDB] Failed to delete file:', request.error)
+          log.error(' Failed to delete file:', request.error)
           reject(request.error)
         }
       }
@@ -390,7 +393,7 @@ export async function deleteCompanionFiles(companionSlug: string): Promise<numbe
 export async function deleteCompanion(slug: string): Promise<void> {
   await deleteCompanionFiles(slug)
   await deleteCompanionMetadata(slug)
-  console.log(`[CompanionDB] Deleted companion: ${slug}`)
+  log.log(` Deleted companion: ${slug}`)
 }
 
 /**

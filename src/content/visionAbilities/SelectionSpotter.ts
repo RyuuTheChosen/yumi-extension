@@ -6,6 +6,9 @@ import { getCurrentScope } from '../utils/scopes'
 import { useScopedChatStore } from '../stores/scopedChat.store'
 import type { Message } from '../utils/db'
 import { bubbleManager, type VisionStage } from './FloatingResponseBubble'
+import { createLogger } from '../../lib/debug'
+
+const log = createLogger('SelectionSpotter')
 
 export class SelectionSpotter {
   private config: SelectionSpotterConfig
@@ -23,7 +26,7 @@ export class SelectionSpotter {
     if (!this.config.enabled) return
 
     document.addEventListener('selectionchange', this.onSelectionChange)
-    console.log('[SelectionSpotter] ✅ Initialized')
+    log.log('✅ Initialized')
   }
 
   private handleSelection() {
@@ -45,7 +48,7 @@ export class SelectionSpotter {
     // Guards
     if (selectedText.length < this.config.minSelectionLength) return
     if (selectedText.length > this.config.maxSelectionLength) {
-      console.log('[SelectionSpotter] Selection too long, ignoring')
+      log.log('Selection too long, ignoring')
       return
     }
     if (selectedText === this.lastSelection) return
@@ -62,7 +65,7 @@ export class SelectionSpotter {
     this.lastSelection = selectedText
     this.lastSelectionObj = selection
 
-    console.log('[SelectionSpotter] 📝 Text selected:', selectedText.slice(0, 50))
+    log.log('📝 Text selected:', selectedText.slice(0, 50))
 
     // Show interactive input UI instead of just an indicator
     this.showInputUI(selection, selectedText)
@@ -86,7 +89,7 @@ export class SelectionSpotter {
         this.sendVisionQuery(selectedText, instruction)
       },
       onCancel: () => {
-        console.log('[SelectionSpotter] User cancelled')
+        log.log('User cancelled')
       },
     })
   }
@@ -96,8 +99,8 @@ export class SelectionSpotter {
     const selection = this.lastSelectionObj
     const surrounding = selection ? getSurroundingText(selection) : ''
     const scope = getCurrentScope()
-    
-    console.log('[SelectionSpotter] 🚀 Sending vision query with instruction:', instruction)
+
+    log.log('🚀 Sending vision query with instruction:', instruction)
     
     // Build structured prompt using best practices
     const prompt = this.buildSelectionPrompt(selectedText, surrounding, instruction)
@@ -173,7 +176,7 @@ export class SelectionSpotter {
       }
 
       port.onMessage.addListener(streamListener)
-      console.log('[SelectionSpotter] Floating bubble created')
+      log.log('Floating bubble created')
     }
     // === END floating bubble ===
     
@@ -265,6 +268,6 @@ Respond in 2-3 sentences. Expand only if the topic is genuinely complex.`
       clearTimeout(this.debounceTimer)
     }
     document.removeEventListener('selectionchange', this.onSelectionChange)
-    console.log('[SelectionSpotter] 🧹 Cleaned up')
+    log.log('🧹 Cleaned up')
   }
 }

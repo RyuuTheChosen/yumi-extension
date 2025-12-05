@@ -5,6 +5,9 @@ import { cn } from '../../lib/design/utils'
 import { VisionSettings } from './VisionSettings'
 import { MemoryBrowser } from './MemoryBrowser'
 import { getInstalledCompanions, getCompanionFileUrl, type StoredCompanion } from '../../lib/companions/db'
+import { createLogger } from '../../lib/debug'
+
+const log = createLogger('SettingsPanel')
 
 // Companion option for selector
 interface CompanionOption {
@@ -155,7 +158,7 @@ export function SettingsPanel() {
 
       setCompanions(options)
     } catch (err) {
-      console.error('[SettingsPanel] Failed to load companions:', err)
+      log.error('Failed to load companions:', err)
     } finally {
       setLoadingCompanions(false)
     }

@@ -8,6 +8,7 @@
  * - Level 3: Deep/site-specific - heavy
  */
 
+import { createLogger } from '../debug'
 import type {
   PageContext,
   PageMetadata,
@@ -21,6 +22,8 @@ import {
   CONTENT_LIMITS,
   DEFAULT_PRIVACY_SETTINGS,
 } from './types'
+
+const log = createLogger('Context')
 
 /**
  * Main extraction function - extracts page context at specified level
@@ -91,11 +94,11 @@ export async function extractPageContext(
     }
 
     const elapsed = performance.now() - startTime
-    console.log(`[Context] Extracted level ${opts.level} in ${elapsed.toFixed(0)}ms`)
+    log.log(`Extracted level ${opts.level} in ${elapsed.toFixed(0)}ms`)
 
     return context
   } catch (error) {
-    console.error('[Context] Extraction failed:', error)
+    log.error('Extraction failed:', error)
     // Return minimal context on error
     return {
       url: window.location.href,

@@ -5,12 +5,16 @@
  * Handles deduplication, sensitive content filtering, and error handling.
  */
 
+import { z } from 'zod'
 import type { Memory, MemoryType, ExtractedMemory, ExtractionResult } from './types'
 import { EXTRACTION_CONFIG } from './types'
 import {
   MEMORY_EXTRACTION_SYSTEM_PROMPT,
   buildExtractionPromptWithContext,
 } from './prompts'
+import { createLogger } from '../debug'
+
+const log = createLogger('Memory')
 
 /**
  * Message format for extraction input
@@ -43,8 +47,8 @@ export function filterSensitiveMemories(
       (m.context && containsSensitiveContent(m.context))
 
     if (isSensitive) {
-      console.log(
-        '[Memory] Filtered sensitive memory:',
+      log.log(
+        'Filtered sensitive memory:',
         m.content.slice(0, 30) + '...'
       )
     }
@@ -52,6 +56,19 @@ export function filterSensitiveMemories(
     return !isSensitive
   })
 }
+
+/**
+ * Zod schema for extracted memory validation
+ */
+const extractedMemorySchema = z.object({
+  content: z.string().min(1).max(500),
+  type: z.enum(['identity', 'preference', 'skill', 'project', 'person', 'event', 'opinion']),
+  importance: z.number().min(0).max(1).default(0.5),
+  confidence: z.number().min(0).max(1).default(0.5),
+  context: z.string().optional(),
+})
+
+const extractionResponseSchema = z.array(extractedMemorySchema)
 
 /**
  * Validate memory type is valid
@@ -69,37 +86,57 @@ function isValidMemoryType(type: string): type is MemoryType {
 }
 
 /**
- * Parse AI response into extracted memories
+ * Parse AI response into extracted memories with Zod validation
  */
 export function parseExtractionResponse(response: string): ExtractedMemory[] {
   try {
     // Try to find JSON array in response (in case there's extra text)
     const jsonMatch = response.match(/\[[\s\S]*\]/)
     if (!jsonMatch) {
-      console.log('[Memory] No JSON array found in response')
+      log.log('No JSON array found in response')
       return []
     }
 
     const parsed = JSON.parse(jsonMatch[0])
 
-    if (!Array.isArray(parsed)) {
-      console.log('[Memory] Parsed result is not an array')
+    // Validate with Zod schema
+    const validationResult = extractionResponseSchema.safeParse(parsed)
+
+    if (!validationResult.success) {
+      log.log('Schema validation failed:', validationResult.error.format())
+      // Fall back to manual validation for partial success
+      if (!Array.isArray(parsed)) {
+        return []
+      }
+    }
+
+    // Use validated data if available, otherwise fall back to parsed
+    const items = validationResult.success ? validationResult.data : parsed
+
+    if (!Array.isArray(items)) {
+      log.log('Parsed result is not an array')
       return []
     }
 
     // Validate and normalize each memory
     const memories: ExtractedMemory[] = []
 
-    for (const item of parsed) {
+    for (const item of items) {
       // Validate required fields
       if (!item.type || !item.content) {
-        console.log('[Memory] Skipping invalid memory (missing type or content)')
+        log.log('Skipping invalid memory (missing type or content)')
         continue
       }
 
       // Validate memory type
       if (!isValidMemoryType(item.type)) {
-        console.log(`[Memory] Skipping invalid memory type: ${item.type}`)
+        log.log(`Skipping invalid memory type: ${item.type}`)
+        continue
+      }
+
+      // Validate content length (max 500 chars)
+      if (item.content.length > 500) {
+        log.log(`Skipping oversized memory: ${item.content.slice(0, 30)}...`)
         continue
       }
 
@@ -109,8 +146,8 @@ export function parseExtractionResponse(response: string): ExtractedMemory[] {
 
       // Skip low confidence memories
       if (confidence < 0.5) {
-        console.log(
-          `[Memory] Skipping low confidence memory: ${item.content.slice(0, 30)}... (${confidence})`
+        log.log(
+          `Skipping low confidence memory: ${item.content.slice(0, 30)}... (${confidence})`
         )
         continue
       }
@@ -126,7 +163,7 @@ export function parseExtractionResponse(response: string): ExtractedMemory[] {
 
     return memories
   } catch (err) {
-    console.error('[Memory] Failed to parse extraction response:', err)
+    log.error('Failed to parse extraction response:', err)
     return []
   }
 }
@@ -187,7 +224,7 @@ export async function extractMemoriesFromConversation(
     // Filter sensitive content
     memories = filterSensitiveMemories(memories)
 
-    console.log(`[Memory] Extracted ${memories.length} memories from conversation`)
+    log.log(`Extracted ${memories.length} memories from conversation`)
 
     return {
       memories,
@@ -196,7 +233,7 @@ export async function extractMemoriesFromConversation(
     }
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : 'Unknown error'
-    console.error('[Memory] Extraction failed:', errorMessage)
+    log.error('Extraction failed:', errorMessage)
 
     return {
       memories: [],
@@ -222,7 +259,7 @@ async function callExtractionAPI(
     const timeoutId = setTimeout(() => {
       if (!resolved) {
         resolved = true
-        console.error('[Memory] Extraction request timed out')
+        log.error('Extraction request timed out')
         resolve({
           success: false,
           error: 'Extraction request timed out',
@@ -247,7 +284,7 @@ async function callExtractionAPI(
 
         // Check for chrome runtime errors
         if (chrome.runtime.lastError) {
-          console.error('[Memory] Runtime error:', chrome.runtime.lastError)
+          log.error('Runtime error:', chrome.runtime.lastError)
           resolve({
             success: false,
             error: chrome.runtime.lastError.message || 'Runtime error',
@@ -257,10 +294,10 @@ async function callExtractionAPI(
 
         // Handle response from background
         if (response) {
-          console.log('[Memory] Received extraction response:', response.success, 'raw length:', response.raw?.length)
+          log.log('Received extraction response:', response.success, 'raw length:', response.raw?.length)
           resolve(response)
         } else {
-          console.error('[Memory] No response from background')
+          log.error('No response from background')
           resolve({
             success: false,
             error: 'No response from background',

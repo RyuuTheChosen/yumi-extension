@@ -3,13 +3,18 @@ import { Send, Mic, Loader2 } from 'lucide-react';
 import { cn } from '../../lib/design/utils';
 import { sttService } from '../../lib/stt/sttService';
 import type { STTState, STTEvent } from '../../lib/stt/types';
+import { createLogger } from '../../lib/debug';
+
+const log = createLogger('MessageInput');
 
 interface MessageInputProps {
   onSend: (content: string) => void;
   disabled?: boolean;
+  placeholder?: string;
   sttEnabled?: boolean;
   hubUrl?: string;
   hubAccessToken?: string | null;
+  onProactiveEngaged?: () => void;
 }
 
 export interface MessageInputHandle {
@@ -19,9 +24,11 @@ export interface MessageInputHandle {
 export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(function MessageInput({
   onSend,
   disabled = false,
+  placeholder = 'Message Yumi...',
   sttEnabled = false,
   hubUrl,
   hubAccessToken,
+  onProactiveEngaged,
 }, ref) {
   const [input, setInput] = useState('');
   const [sttState, setSTTState] = useState<STTState>('idle');
@@ -76,7 +83,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
         case 'transcription:error':
           setSTTState('idle');
           setRecordingDuration(0);
-          console.error('[MessageInput] STT error:', event.error);
+          log.error('STT error:', event.error);
           break;
       }
     });
@@ -147,7 +154,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Message Yumi..."
+            placeholder={placeholder}
             rows={1}
             maxLength={maxChars}
             className={cn(

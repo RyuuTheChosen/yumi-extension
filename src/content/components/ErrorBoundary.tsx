@@ -1,4 +1,7 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react'
+import { createLogger } from '../../lib/debug'
+
+const log = createLogger('ErrorBoundary')
 
 interface Props {
   children: ReactNode
@@ -20,7 +23,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('[ChatOverlay Error Boundary]', error, errorInfo)
+    log.error('ChatOverlay Error Boundary:', error, errorInfo)
   }
 
   render() {
