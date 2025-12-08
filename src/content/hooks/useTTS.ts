@@ -47,6 +47,10 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
   const streamingTtsRef = useRef<StreamingTTSService | null>(null)
   const sentenceBufferRef = useRef<string>('')
   const streamingTtsFailedRef = useRef<boolean>(false)
+  const busUnsubRef = useRef<(() => void) | null>(null)
+  const fullTextBufferRef = useRef<string>('')
+  const pendingSentencesRef = useRef<string[]>([])
+  const wsReadyRef = useRef<boolean>(false)
 
   /**
    * Initialize non-streaming TTS service with Hub credentials and companion voice
@@ -82,16 +86,53 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
   }, [enabled, volume, activeCompanionSlug, hubUrl, hubAccessToken])
 
   /**
-   * Streaming TTS: Play audio as text streams in real-time
+   * Streaming TTS: Set up bus subscription when 'sending' starts
    *
-   * - Connects to WebSocket when streaming starts
-   * - Buffers text and sends complete sentences
-   * - Integrates with lip sync animation
-   * - Falls back to non-streaming if connection fails
+   * Uses refs to persist subscription across status changes (sending -> streaming)
    */
   useEffect(() => {
-    /** Bug 3 Fix: Cleanup when TTS is disabled */
+    if (!enabled || !hubUrl || !hubAccessToken) {
+      return
+    }
+
+    if (status === 'sending') {
+      sentenceBufferRef.current = ''
+      fullTextBufferRef.current = ''
+      pendingSentencesRef.current = []
+      wsReadyRef.current = false
+      streamingTtsFailedRef.current = false
+
+      if (!busUnsubRef.current) {
+        busUnsubRef.current = bus.on('stream', (delta: string) => {
+          sentenceBufferRef.current += delta
+          fullTextBufferRef.current += delta
+          const { sentences, remaining } = extractCompleteSentences(sentenceBufferRef.current)
+          sentenceBufferRef.current = remaining
+
+          for (const sentence of sentences) {
+            if (sentence.trim()) {
+              if (wsReadyRef.current && streamingTtsRef.current) {
+                streamingTtsRef.current.sendText(sentence)
+              } else {
+                pendingSentencesRef.current.push(sentence)
+              }
+            }
+          }
+        })
+        log.log('[useTTS] Bus subscription created')
+      }
+    }
+  }, [status, enabled, hubUrl, hubAccessToken])
+
+  /**
+   * Streaming TTS: Connect WebSocket when streaming starts
+   */
+  useEffect(() => {
     if (!enabled) {
+      if (busUnsubRef.current) {
+        busUnsubRef.current()
+        busUnsubRef.current = null
+      }
       if (streamingTtsRef.current) {
         streamingTtsRef.current.destroy()
         streamingTtsRef.current = null
@@ -105,40 +146,25 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
       return
     }
 
-    let streamUnsubscribe: (() => void) | null = null
-    let currentVoiceId = ''
+    if (status !== 'streaming') {
+      return
+    }
 
-    const startStreamingTTS = async () => {
-      sentenceBufferRef.current = ''
-      streamingTtsFailedRef.current = false
+    let disconnectLipSync: (() => void) | null = null
+    let connectionStarted = false
 
-      let wsReady = false
-      let pendingSentences: string[] = []
+    const startStreamingConnection = async () => {
+      if (connectionStarted || streamingTtsRef.current) return
+      connectionStarted = true
 
-      streamUnsubscribe = bus.on('stream', (delta: string) => {
-        sentenceBufferRef.current += delta
-        const { sentences, remaining } = extractCompleteSentences(sentenceBufferRef.current)
-        sentenceBufferRef.current = remaining
-
-        for (const sentence of sentences) {
-          if (sentence.trim()) {
-            if (wsReady && streamingTtsRef.current) {
-              streamingTtsRef.current.sendText(sentence)
-            } else {
-              pendingSentences.push(sentence)
-            }
-          }
-        }
-      })
-
+      let currentVoiceId = 'MEJe6hPrI48Kt2lFuVe3'
       try {
         const companion = await getActiveCompanion(activeCompanionSlug)
         currentVoiceId = companion.personality.voice?.voiceId || 'MEJe6hPrI48Kt2lFuVe3'
       } catch {
-        currentVoiceId = 'MEJe6hPrI48Kt2lFuVe3'
+        // Use default
       }
 
-      /** Stop any existing TTS before starting streaming */
       ttsCoordinator.stopAll()
 
       streamingTtsRef.current = new StreamingTTSService(hubUrl, hubAccessToken, {
@@ -148,6 +174,7 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
         speed: 1.0,
       })
 
+      log.log('[useTTS] Connecting to streaming TTS...')
       const connected = await streamingTtsRef.current.connect()
       if (!connected) {
         log.warn('[useTTS] Streaming TTS connection failed, will fall back to non-streaming')
@@ -159,7 +186,6 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
 
       log.log('[useTTS] Streaming TTS connected')
 
-      /** Register with coordinator so other TTS can stop us */
       ttsCoordinator.registerActive(() => {
         if (streamingTtsRef.current) {
           streamingTtsRef.current.destroy()
@@ -167,19 +193,18 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
         }
       })
 
-      wsReady = true
-      if (pendingSentences.length > 0) {
-        log.log(`[useTTS] Sending ${pendingSentences.length} buffered sentences`)
-        for (const sentence of pendingSentences) {
+      wsReadyRef.current = true
+      if (pendingSentencesRef.current.length > 0) {
+        log.log(`[useTTS] Sending ${pendingSentencesRef.current.length} buffered sentences`)
+        for (const sentence of pendingSentencesRef.current) {
           streamingTtsRef.current.sendText(sentence)
         }
-        pendingSentences = []
+        pendingSentencesRef.current = []
       }
 
       bus.emit('avatar', { type: 'speaking:start' })
 
       const analyser = streamingTtsRef.current.getAnalyserNode()
-      let disconnectLipSync: (() => void) | null = null
       if (analyser) {
         const connectLipSync = (window as { __yumiConnectStreamingAnalyser?: (a: AnalyserNode) => () => void }).__yumiConnectStreamingAnalyser
         if (connectLipSync) {
@@ -189,9 +214,8 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
       }
 
       streamingTtsRef.current.onAudioEnd(() => {
-        log.log('[useTTS] Streaming TTS audio finished, closing connection')
+        log.log('[useTTS] Streaming TTS audio finished')
 
-        /** Check if any audio was actually received */
         const hadAudio = streamingTtsRef.current?.hasReceivedAudio() ?? false
         if (!hadAudio) {
           log.warn('[useTTS] No audio was received, marking as failed for fallback')
@@ -200,6 +224,7 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
 
         if (disconnectLipSync) {
           disconnectLipSync()
+          disconnectLipSync = null
         }
 
         ttsCoordinator.clearActive()
@@ -212,32 +237,54 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
       })
     }
 
-    const stopStreamingTTS = () => {
-      if (streamUnsubscribe) {
-        streamUnsubscribe()
-        streamUnsubscribe = null
-      }
+    startStreamingConnection()
 
+    return () => {
       if (streamingTtsRef.current && sentenceBufferRef.current.trim()) {
-        log.log('[useTTS] Flushing remaining text, waiting for audio...')
+        log.log('[useTTS] Flushing remaining text')
         streamingTtsRef.current.sendText(sentenceBufferRef.current, true)
         sentenceBufferRef.current = ''
       }
 
-      /** Bug 1 Fix: Always call close() to ensure onAudioEnd fires */
       if (streamingTtsRef.current) {
         streamingTtsRef.current.close()
       }
-    }
 
-    if (status === 'streaming') {
-      startStreamingTTS()
-    }
-
-    return () => {
-      stopStreamingTTS()
+      if (disconnectLipSync) {
+        disconnectLipSync()
+      }
     }
   }, [status, enabled, hubUrl, hubAccessToken, volume, activeCompanionSlug])
+
+  /**
+   * Cleanup and fallback when streaming ends
+   */
+  useEffect(() => {
+    if (status !== 'idle' && status !== 'error' && status !== 'canceled') {
+      return
+    }
+
+    if (busUnsubRef.current) {
+      busUnsubRef.current()
+      busUnsubRef.current = null
+      log.log('[useTTS] Bus subscription removed')
+    }
+
+    wsReadyRef.current = false
+
+    if (streamingTtsFailedRef.current && fullTextBufferRef.current.trim()) {
+      log.log('[useTTS] Falling back to non-streaming TTS')
+      const textToSpeak = fullTextBufferRef.current
+      fullTextBufferRef.current = ''
+      bus.emit('avatar', { type: 'speaking:start' })
+      ttsService.speak(textToSpeak)
+        .then(() => bus.emit('avatar', { type: 'speaking:stop' }))
+        .catch((err) => {
+          log.error('[useTTS] Fallback TTS failed:', err)
+          bus.emit('avatar', { type: 'speaking:stop' })
+        })
+    }
+  }, [status])
 
   return {
     streamingTtsRef,

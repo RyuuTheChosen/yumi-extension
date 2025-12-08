@@ -200,7 +200,6 @@ export class StreamingTTSService {
       case 'done':
         log.log('Server signaled stream complete')
         this.streamDone = true
-        // If queue is already empty, signal audio end now
         if (!this.isPlaying && this.audioQueue.length === 0) {
           this.audioEndCallback?.()
         }
@@ -209,10 +208,10 @@ export class StreamingTTSService {
       case 'error':
         log.error('Server error:', message.message)
         this.setState('error')
+        connectResolve?.(false)
         break
 
       case 'alignment':
-        // Could be used for word-level lip sync in future
         break
     }
   }
