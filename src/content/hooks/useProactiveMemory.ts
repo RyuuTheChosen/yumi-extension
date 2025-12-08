@@ -205,8 +205,15 @@ export function useProactiveMemory(options: UseProactiveMemoryOptions): UseProac
       }
 
       if (ttsEnabled) {
-        ttsService.speak(proactiveAction.message)
         bus.emit('avatar', { type: 'speaking:start' })
+        ttsService.speak(proactiveAction.message)
+          .then(() => {
+            bus.emit('avatar', { type: 'speaking:stop' })
+          })
+          .catch((err) => {
+            log.error('[useProactiveMemory] TTS failed:', err)
+            bus.emit('avatar', { type: 'speaking:stop' })
+          })
       }
 
       bus.emit('proactive:triggered', {

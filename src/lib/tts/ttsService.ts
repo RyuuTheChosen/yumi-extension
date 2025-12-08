@@ -7,6 +7,7 @@
 import type { TTSSettings, TTSEvent, TTSPlaybackState } from './types'
 import { DEFAULT_TTS_SETTINGS } from './types'
 import { createLogger } from '../core/debug'
+import { ttsCoordinator } from './ttsCoordinator'
 
 const log = createLogger('TTS')
 
@@ -80,8 +81,11 @@ class TTSService {
       return
     }
 
-    // Stop any current playback
     this.stop()
+
+    /** Stop any streaming TTS that might be playing */
+    ttsCoordinator.stopAll()
+    ttsCoordinator.registerActive(() => this.stop())
 
     log.log('Requesting speech from Hub...')
     this.emit({ type: 'speaking:start', text })
@@ -138,9 +142,9 @@ class TTSService {
       this.audioElement.volume = this.settings.volume
       this.audioElement.src = this.currentBlobUrl
 
-      // Handle audio end
       const onEnded = () => {
         this.emit({ type: 'speaking:end' })
+        ttsCoordinator.clearActive()
         this.cleanupAudio()
         resolve()
       }
@@ -177,13 +181,13 @@ class TTSService {
    * Stop current speech.
    */
   stop(): void {
-    // Abort any pending request
     if (this.abortController) {
       this.abortController.abort()
       this.abortController = null
     }
 
     this.cleanupAudio()
+    ttsCoordinator.clearActive()
     this.emit({ type: 'speaking:end' })
     log.log('Stopped')
   }

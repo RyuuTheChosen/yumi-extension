@@ -8,3 +8,4 @@
 export * from './types'
 export { ttsService, TTSService } from './ttsService'
 export { StreamingTTSService, extractCompleteSentences } from './streamingTts'
+export { ttsCoordinator } from './ttsCoordinator'

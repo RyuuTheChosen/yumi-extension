@@ -63,7 +63,8 @@ export class StreamingTTSService {
   private audioEndCallback: AudioEndCallback | null = null
   private analyserNode: AnalyserNode | null = null
   private gainNode: GainNode | null = null
-  private streamDone = false // Track if server sent 'done' message
+  private streamDone = false
+  private audioChunksReceived = 0
 
   constructor(
     private hubUrl: string,
@@ -98,6 +99,13 @@ export class StreamingTTSService {
    */
   getAnalyserNode(): AnalyserNode | null {
     return this.analyserNode
+  }
+
+  /**
+   * Check if any audio chunks have been received.
+   */
+  hasReceivedAudio(): boolean {
+    return this.audioChunksReceived > 0
   }
 
   /**
@@ -228,8 +236,8 @@ export class StreamingTTSService {
         this.audioQueue.shift()
       }
 
-      // Add to queue
       this.audioQueue.push(audioData)
+      this.audioChunksReceived++
 
       // Start playback if not already playing
       if (!this.isPlaying) {
@@ -359,10 +367,10 @@ export class StreamingTTSService {
       this.ws = null
     }
 
-    // Clear audio queue to stop playback
     this.audioQueue = []
     this.isPlaying = false
     this.streamDone = true
+    this.audioChunksReceived = 0
 
     if (this.audioContext) {
       this.audioContext.close()

@@ -7,7 +7,7 @@
 
 import { useEffect, useRef } from 'react'
 import { createLogger } from '../../lib/core/debug'
-import { ttsService } from '../../lib/tts'
+import { ttsService, ttsCoordinator } from '../../lib/tts'
 import { StreamingTTSService, extractCompleteSentences } from '../../lib/tts/streamingTts'
 import { bus } from '../../lib/core/bus'
 import { getActiveCompanion } from '../../lib/companions/loader'
@@ -90,7 +90,18 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
    * - Falls back to non-streaming if connection fails
    */
   useEffect(() => {
-    if (!enabled || !hubUrl || !hubAccessToken) {
+    /** Bug 3 Fix: Cleanup when TTS is disabled */
+    if (!enabled) {
+      if (streamingTtsRef.current) {
+        streamingTtsRef.current.destroy()
+        streamingTtsRef.current = null
+      }
+      ttsService.stop()
+      ttsCoordinator.stopAll()
+      return
+    }
+
+    if (!hubUrl || !hubAccessToken) {
       return
     }
 
@@ -127,6 +138,9 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
         currentVoiceId = 'MEJe6hPrI48Kt2lFuVe3'
       }
 
+      /** Stop any existing TTS before starting streaming */
+      ttsCoordinator.stopAll()
+
       streamingTtsRef.current = new StreamingTTSService(hubUrl, hubAccessToken, {
         enabled: true,
         voice: currentVoiceId,
@@ -144,6 +158,14 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
       }
 
       log.log('[useTTS] Streaming TTS connected')
+
+      /** Register with coordinator so other TTS can stop us */
+      ttsCoordinator.registerActive(() => {
+        if (streamingTtsRef.current) {
+          streamingTtsRef.current.destroy()
+          streamingTtsRef.current = null
+        }
+      })
 
       wsReady = true
       if (pendingSentences.length > 0) {
@@ -168,10 +190,21 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
 
       streamingTtsRef.current.onAudioEnd(() => {
         log.log('[useTTS] Streaming TTS audio finished, closing connection')
+
+        /** Check if any audio was actually received */
+        const hadAudio = streamingTtsRef.current?.hasReceivedAudio() ?? false
+        if (!hadAudio) {
+          log.warn('[useTTS] No audio was received, marking as failed for fallback')
+          streamingTtsFailedRef.current = true
+        }
+
         if (disconnectLipSync) {
           disconnectLipSync()
         }
+
+        ttsCoordinator.clearActive()
         bus.emit('avatar', { type: 'speaking:stop' })
+
         if (streamingTtsRef.current) {
           streamingTtsRef.current.destroy()
           streamingTtsRef.current = null
@@ -191,7 +224,8 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
         sentenceBufferRef.current = ''
       }
 
-      if (streamingTtsRef.current && streamingTtsFailedRef.current) {
+      /** Bug 1 Fix: Always call close() to ensure onAudioEnd fires */
+      if (streamingTtsRef.current) {
         streamingTtsRef.current.close()
       }
     }
