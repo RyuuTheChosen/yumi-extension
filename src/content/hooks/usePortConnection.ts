@@ -14,6 +14,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { useScopedChatStore } from '../stores/scopedChat.store'
 import { setActivePort } from '../portManager'
 import { createLogger } from '../../lib/core/debug'
+import { bus } from '../../lib/core/bus'
 
 const log = createLogger('Port')
 
@@ -100,6 +101,7 @@ export function usePortConnection(options: UsePortConnectionOptions = {}) {
     switch (msg.type) {
       case 'STREAM_CHUNK':
         updateStreamingMessage(msg.payload.delta)
+        bus.emit('stream', msg.payload.delta, { requestId })
         options.onChunk?.(msg.payload.delta)
         break
         
@@ -107,18 +109,26 @@ export function usePortConnection(options: UsePortConnectionOptions = {}) {
         log.log('Stream ended, finalizing message')
         if (requestId) {
           processedRequestIdsRef.current.add(requestId)
-          // Clean up old IDs (keep last 100)
           if (processedRequestIdsRef.current.size > 100) {
             const arr = Array.from(processedRequestIdsRef.current)
             processedRequestIdsRef.current = new Set(arr.slice(-100))
           }
         }
+        bus.emit('streamEnd', { requestId })
         finalizeStreamingMessage()
         options.onEnd?.()
         break
         
       case 'STREAM_ERROR':
         const error = msg.payload.error || 'Stream error'
+        bus.emit('streamError', {
+          category: 'unknown',
+          message: error,
+          retriable: false,
+          attempt: 1,
+          maxAttempts: 1,
+          timestamp: Date.now()
+        })
         setError(error)
         setStatus('error')
         options.onError?.(error)
