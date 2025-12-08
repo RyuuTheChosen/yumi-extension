@@ -2,57 +2,68 @@
  * Web Search Hook
  *
  * Manages web search integration for chat messages.
- * Detects search intent, prompts user for confirmation, and performs searches.
+ * Provides simple API for performing searches and associating results with messages.
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createLogger } from '../../lib/core/debug'
 import {
-  shouldSuggestSearch,
   extractSearchQuery,
   performSearch,
   type SearchResult,
+  type SearchErrorType,
 } from '../../lib/search'
 
 const log = createLogger('useWebSearch')
 
+/** Search error with type for specific UI messaging */
+export interface SearchError {
+  message: string
+  type: SearchErrorType
+}
+
 export interface UseWebSearchOptions {
   status: 'idle' | 'sending' | 'streaming' | 'error' | 'canceled'
   displayMessages: Array<{ role: string; id: string }>
-  statusRef: React.MutableRefObject<string>
 }
 
 export interface UseWebSearchReturn {
-  showSearchPrompt: boolean
   isSearching: boolean
-  searchError: string | null
-  searchQuery: string
+  searchError: SearchError | null
   messageSources: Map<string, SearchResult[]>
+  lastSearchQuery: string | null
   pendingSourcesRef: React.MutableRefObject<SearchResult[] | null>
-  handleSendMessage: (content: string, doSendMessage: (content: string, searchResults?: SearchResult[]) => Promise<void>) => Promise<void>
-  handleSearchConfirm: (doSendMessage: (content: string, searchResults?: SearchResult[]) => Promise<void>) => Promise<void>
-  handleSearchSkip: (doSendMessage: (content: string) => Promise<void>) => Promise<void>
+  performSearchForMessage: (message: string) => Promise<SearchResult[] | null>
+  clearError: () => void
+  retrySearch: () => Promise<SearchResult[] | null>
   setMessageSources: React.Dispatch<React.SetStateAction<Map<string, SearchResult[]>>>
+}
+
+/** Error messages by type */
+const ERROR_MESSAGES: Record<SearchErrorType, string> = {
+  timeout: 'Search timed out',
+  network: 'Could not connect to search',
+  auth: 'Search requires login',
+  quota: 'Search quota exceeded',
+  config: 'Search not configured',
+  unknown: 'Search failed',
 }
 
 /**
  * Custom hook for web search integration
  *
  * Features:
- * - Detects search intent in user messages
- * - Shows search confirmation prompt
- * - Performs web search and attaches results to messages
- * - Associates search results with assistant responses
- * - Handles search errors gracefully
+ * - Performs web search and returns results
+ * - Associates search results with assistant messages
+ * - Handles search errors with specific messages
+ * - Supports retry functionality
  */
 export function useWebSearch(options: UseWebSearchOptions): UseWebSearchReturn {
-  const { status, displayMessages, statusRef } = options
+  const { status, displayMessages } = options
 
-  const [showSearchPrompt, setShowSearchPrompt] = useState(false)
-  const [pendingMessage, setPendingMessage] = useState<string | null>(null)
-  const [searchQuery, setSearchQuery] = useState<string>('')
   const [isSearching, setIsSearching] = useState(false)
-  const [searchError, setSearchError] = useState<string | null>(null)
+  const [searchError, setSearchError] = useState<SearchError | null>(null)
+  const [lastSearchQuery, setLastSearchQuery] = useState<string | null>(null)
   const [messageSources, setMessageSources] = useState<Map<string, SearchResult[]>>(new Map())
   const pendingSourcesRef = useRef<SearchResult[] | null>(null)
 
@@ -75,76 +86,77 @@ export function useWebSearch(options: UseWebSearchOptions): UseWebSearchReturn {
   }, [status, displayMessages])
 
   /**
-   * Handle search confirmation - perform search and send message with results
+   * Perform search for a message
    */
-  const handleSearchConfirm = useCallback(async (doSendMessage: (content: string, searchResults?: SearchResult[]) => Promise<void>) => {
-    if (!pendingMessage) return
-
-    setShowSearchPrompt(false)
+  const performSearchForMessage = useCallback(async (message: string): Promise<SearchResult[] | null> => {
+    const query = extractSearchQuery(message)
+    setLastSearchQuery(query)
     setIsSearching(true)
     setSearchError(null)
 
     try {
-      log.log('[useWebSearch] Performing web search for:', searchQuery)
-      const response = await performSearch({ query: searchQuery })
+      log.log('[useWebSearch] Performing search for:', query)
+      const response = await performSearch({ query })
       log.log('[useWebSearch] Search completed:', response.results.length, 'results')
-      await doSendMessage(pendingMessage, response.results)
+      return response.results
     } catch (err) {
-      log.warn('[useWebSearch] Search failed, sending without results:', err)
-      setSearchError('Search unavailable, answering from knowledge')
-      setTimeout(() => setSearchError(null), 4000)
-      await doSendMessage(pendingMessage)
+      log.warn('[useWebSearch] Search failed:', err)
+
+      const errorType = (err as { errorType?: SearchErrorType })?.errorType || 'unknown'
+      setSearchError({
+        message: ERROR_MESSAGES[errorType],
+        type: errorType,
+      })
+      return null
     } finally {
       setIsSearching(false)
-      setPendingMessage(null)
-      setSearchQuery('')
     }
-  }, [pendingMessage, searchQuery])
+  }, [])
 
   /**
-   * Handle search skip - send message without search results
+   * Clear search error
    */
-  const handleSearchSkip = useCallback(async (doSendMessage: (content: string) => Promise<void>) => {
-    if (!pendingMessage) return
-
-    setShowSearchPrompt(false)
-    setPendingMessage(null)
-    setSearchQuery('')
-
-    await doSendMessage(pendingMessage)
-  }, [pendingMessage])
+  const clearError = useCallback(() => {
+    setSearchError(null)
+  }, [])
 
   /**
-   * Main send message handler - checks if search should be suggested
+   * Retry last search
    */
-  const handleSendMessage = useCallback(async (
-    content: string,
-    doSendMessage: (content: string, searchResults?: SearchResult[]) => Promise<void>
-  ) => {
-    if (!content.trim() || statusRef.current === 'sending' || statusRef.current === 'streaming') return
+  const retrySearch = useCallback(async (): Promise<SearchResult[] | null> => {
+    if (!lastSearchQuery) return null
 
-    if (shouldSuggestSearch(content)) {
-      const query = extractSearchQuery(content)
-      log.log('[useWebSearch] Search suggested for:', query)
-      setSearchQuery(query)
-      setPendingMessage(content)
-      setShowSearchPrompt(true)
-      return
+    setIsSearching(true)
+    setSearchError(null)
+
+    try {
+      log.log('[useWebSearch] Retrying search for:', lastSearchQuery)
+      const response = await performSearch({ query: lastSearchQuery })
+      log.log('[useWebSearch] Retry completed:', response.results.length, 'results')
+      return response.results
+    } catch (err) {
+      log.warn('[useWebSearch] Retry failed:', err)
+
+      const errorType = (err as { errorType?: SearchErrorType })?.errorType || 'unknown'
+      setSearchError({
+        message: ERROR_MESSAGES[errorType],
+        type: errorType,
+      })
+      return null
+    } finally {
+      setIsSearching(false)
     }
-
-    await doSendMessage(content)
-  }, [statusRef])
+  }, [lastSearchQuery])
 
   return {
-    showSearchPrompt,
     isSearching,
     searchError,
-    searchQuery,
     messageSources,
+    lastSearchQuery,
     pendingSourcesRef,
-    handleSendMessage,
-    handleSearchConfirm,
-    handleSearchSkip,
-    setMessageSources
+    performSearchForMessage,
+    clearError,
+    retrySearch,
+    setMessageSources,
   }
 }

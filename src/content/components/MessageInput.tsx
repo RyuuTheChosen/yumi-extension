@@ -1,11 +1,19 @@
 import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
-import { Send, Mic, Loader2 } from 'lucide-react';
+import { Send, Mic, Loader2, Globe } from 'lucide-react';
 import { cn } from '../../lib/design/utils';
 import { sttService } from '../../lib/stt/sttService';
 import type { STTState, STTEvent } from '../../lib/stt/types';
 import { createLogger } from '../../lib/core/debug';
 
 const log = createLogger('MessageInput');
+
+/** Search toggle props for web search functionality */
+export interface SearchProps {
+  available: boolean;
+  active: boolean;
+  isSearching: boolean;
+  onToggle: () => void;
+}
 
 interface MessageInputProps {
   onSend: (content: string) => void;
@@ -15,6 +23,7 @@ interface MessageInputProps {
   hubUrl?: string;
   hubAccessToken?: string | null;
   onProactiveEngaged?: () => void;
+  searchProps?: SearchProps;
 }
 
 export interface MessageInputHandle {
@@ -29,6 +38,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
   hubUrl,
   hubAccessToken,
   onProactiveEngaged,
+  searchProps,
 }, ref) {
   const [input, setInput] = useState('');
   const [sttState, setSTTState] = useState<STTState>('idle');
@@ -123,10 +133,15 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    e.stopPropagation();
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSubmit();
     }
+  };
+
+  const stopPropagation = (e: React.KeyboardEvent | React.SyntheticEvent) => {
+    e.stopPropagation();
   };
 
   const charCount = input.length;
@@ -154,6 +169,8 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
+            onKeyUp={stopPropagation}
+            onKeyPress={stopPropagation}
             placeholder={placeholder}
             rows={1}
             maxLength={maxChars}
@@ -216,6 +233,30 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
               </span>
             ) : (
               <Mic size={16} />
+            )}
+          </button>
+        )}
+
+        {searchProps?.available && (
+          <button
+            onClick={searchProps.onToggle}
+            disabled={disabled || searchProps.isSearching}
+            className={cn(
+              'flex items-center justify-center w-9 h-9 rounded-lg transition-all duration-150 flex-shrink-0',
+              'focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40',
+              searchProps.isSearching
+                ? 'bg-blue-500/20 text-blue-400 cursor-wait'
+                : searchProps.active
+                  ? 'bg-blue-500/30 text-blue-400 shadow-[0_0_8px_rgba(59,130,246,0.3)]'
+                  : 'bg-white/10 hover:bg-white/20 text-white/50'
+            )}
+            aria-label={searchProps.active ? 'Web search enabled' : 'Enable web search'}
+            title={searchProps.active ? 'Web search enabled - click to disable' : 'Search web with this message'}
+          >
+            {searchProps.isSearching ? (
+              <Loader2 size={16} className="animate-spin" />
+            ) : (
+              <Globe size={16} />
             )}
           </button>
         )}

@@ -3,8 +3,16 @@ import type {
   SearchResponse,
   SearchResult,
   CachedSearch,
+  SearchErrorType,
 } from './types'
 import { SEARCH_CONFIG } from './types'
+
+/** Create a search error with errorType */
+function createSearchError(message: string, errorType: SearchErrorType): Error & { errorType: SearchErrorType } {
+  const error = new Error(message) as Error & { errorType: SearchErrorType }
+  error.errorType = errorType
+  return error
+}
 
 const searchCache = new Map<string, CachedSearch>()
 const accessTimes = new Map<string, number>()
@@ -80,7 +88,7 @@ export async function performSearch(
 
   return new Promise((resolve, reject) => {
     const timeoutId = setTimeout(() => {
-      reject(new Error('Search request timed out'))
+      reject(createSearchError('Search request timed out', 'timeout'))
     }, SEARCH_CONFIG.timeoutMs + 1000)
 
     chrome.runtime.sendMessage(
@@ -92,12 +100,13 @@ export async function performSearch(
         clearTimeout(timeoutId)
 
         if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message))
+          reject(createSearchError(chrome.runtime.lastError.message || 'Chrome runtime error', 'unknown'))
           return
         }
 
         if (!response?.success) {
-          reject(new Error(response?.error || 'Search failed'))
+          const errorType = response?.errorType as SearchErrorType || 'unknown'
+          reject(createSearchError(response?.error || 'Search failed', errorType))
           return
         }
 

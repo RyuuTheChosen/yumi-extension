@@ -16,7 +16,6 @@ import { ChatHeader } from './components/ChatHeader'
 import { MessageBubble } from './components/MessageBubble'
 import { MessageInput, type MessageInputHandle } from './components/MessageInput'
 import { EmptyState } from './components/EmptyState'
-import { SearchPrompt } from './components/SearchPrompt'
 import { getThreadMessages } from './utils/db'
 import { setChatOpen } from './chatState'
 import {
@@ -24,9 +23,10 @@ import {
   getMemoriesForPrompt,
   migrateLocalMemories,
 } from '../lib/memory'
-import { checkPluginTriggers } from '../lib/plugins/loader'
+import { checkPluginTriggers, isPluginActive } from '../lib/plugins/loader'
 import { extractPageContext, buildContextForPrompt } from '../lib/context'
 import { formatSearchResultsForPrompt, type SearchResult } from '../lib/search'
+import { Loader2 } from 'lucide-react'
 
 const log = createLogger('ChatOverlay')
 
@@ -134,21 +134,20 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
     streamingTtsFailedRef
   })
 
+  const [searchActive, setSearchActive] = useState(false)
+
   const {
-    showSearchPrompt,
     isSearching,
     searchError,
-    searchQuery,
     messageSources,
     pendingSourcesRef,
-    handleSendMessage: handleSendMessageWithSearch,
-    handleSearchConfirm: handleSearchConfirmHook,
-    handleSearchSkip: handleSearchSkipHook,
+    performSearchForMessage,
+    clearError: clearSearchError,
+    retrySearch,
     setMessageSources
   } = useWebSearch({
     status,
     displayMessages,
-    statusRef
   })
 
   const {
@@ -370,16 +369,25 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
    * Callback functions
    */
   const handleSendMessage = useCallback(async (content: string) => {
-    await handleSendMessageWithSearch(content, doSendMessage)
-  }, [handleSendMessageWithSearch, doSendMessage])
+    if (!content.trim() || statusRef.current === 'sending' || statusRef.current === 'streaming') return
 
-  const handleSearchConfirm = useCallback(async () => {
-    await handleSearchConfirmHook(doSendMessage)
-  }, [handleSearchConfirmHook, doSendMessage])
+    if (searchActive) {
+      setSearchActive(false)
+      const results = await performSearchForMessage(content)
+      if (results && results.length > 0) {
+        pendingSourcesRef.current = results
+        await doSendMessage(content, results)
+      } else {
+        await doSendMessage(content)
+      }
+    } else {
+      await doSendMessage(content)
+    }
+  }, [searchActive, performSearchForMessage, doSendMessage, pendingSourcesRef])
 
-  const handleSearchSkip = useCallback(async () => {
-    await handleSearchSkipHook(doSendMessage)
-  }, [handleSearchSkipHook, doSendMessage])
+  const handleSearchToggle = useCallback(() => {
+    setSearchActive(prev => !prev)
+  }, [])
 
   const handleClearThread = useCallback(async () => {
     if (confirm('Clear conversation from view? (Messages remain in history)')) {
@@ -500,13 +508,6 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
             )}
           </AnimatePresence>
 
-          <SearchPrompt
-            query={searchQuery}
-            visible={showSearchPrompt}
-            onSearch={handleSearchConfirm}
-            onSkip={handleSearchSkip}
-          />
-
           <AnimatePresence>
             {isSearching && (
               <motion.div
@@ -521,9 +522,13 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
                   borderRadius: '10px',
                   fontSize: '13px',
                   color: '#93c5fd',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
                 }}
               >
-                Searching web...
+                <Loader2 size={14} className="animate-spin" />
+                <span>Searching web...</span>
               </motion.div>
             )}
           </AnimatePresence>
@@ -542,9 +547,48 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
                   borderRadius: '10px',
                   fontSize: '13px',
                   color: '#fde047',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: '8px',
                 }}
               >
-                {searchError}
+                <span>{searchError.message}</span>
+                <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                  <button
+                    onClick={async () => {
+                      const results = await retrySearch()
+                      if (results && results.length > 0) {
+                        pendingSourcesRef.current = results
+                      }
+                    }}
+                    style={{
+                      background: 'rgba(251, 191, 36, 0.25)',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '4px 10px',
+                      color: '#fde047',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                    }}
+                  >
+                    Retry
+                  </button>
+                  <button
+                    onClick={clearSearchError}
+                    style={{
+                      background: 'rgba(251, 191, 36, 0.15)',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '4px 10px',
+                      color: '#fde047',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                    }}
+                  >
+                    Dismiss
+                  </button>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
@@ -606,6 +650,12 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
           disabled={!connected || status === 'streaming'}
           placeholder={connected ? 'Message...' : 'Connecting...'}
           onProactiveEngaged={handleProactiveEngaged}
+          searchProps={{
+            available: isPluginActive('search'),
+            active: searchActive,
+            isSearching,
+            onToggle: handleSearchToggle,
+          }}
         />
       </div>
 

@@ -10,6 +10,7 @@ import { setupExternalMessaging } from './externalMessaging'
 import { initializeContextMenus, setupContextMenuHandlers } from './contextMenu'
 import { initializePortHandlers } from './portManager'
 import { handleMemoryExtraction } from './memory'
+import { handleSearchRequest } from './search'
 import { AUDIO } from '../lib/config/constants'
 import { getErrorMessage } from '../lib/core/errors'
 import { registerBuiltinPlugins } from '../lib/plugins/builtin'
@@ -256,6 +257,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         log.error('Failed to clear memories:', err)
         sendResponse({ success: false, error: getErrorMessage(err) })
       }
+    })()
+    return true
+  }
+
+  /**
+   * SEARCH_REQUEST - Web search via Hub API
+   */
+  if (msg.type === 'SEARCH_REQUEST') {
+    (async () => {
+      const response = await handleSearchRequest(msg.payload)
+      sendResponse(response)
     })()
     return true
   }

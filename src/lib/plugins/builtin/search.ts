@@ -6,10 +6,6 @@
  */
 
 import type { Plugin, PromptContext, TriggerResult } from '../types'
-import {
-  shouldSuggestSearch,
-  extractSearchQuery,
-} from '../../search'
 
 export const searchPlugin: Plugin = {
   manifest: {
@@ -19,7 +15,7 @@ export const searchPlugin: Plugin = {
     version: '1.0.0',
   },
 
-  getPromptAdditions: (context: PromptContext) => {
+  getPromptAdditions: (_context: PromptContext) => {
     return `## Web Search Capability
 You can search the web for current, up-to-date information. When the user asks about:
 - Recent news or events
@@ -31,23 +27,10 @@ You have access to real-time web search results that will be provided in the con
 Let the user know when you're using search results to answer their question.`
   },
 
-  analyzeTrigger: (message: string): TriggerResult | null => {
-    if (shouldSuggestSearch(message)) {
-      const query = extractSearchQuery(message)
-      if (query) {
-        return {
-          pluginId: 'search',
-          type: 'search_query',
-          confidence: 0.8,
-          data: { query },
-        }
-      }
-    }
+  analyzeTrigger: (_message: string): TriggerResult | null => {
+    /** Search is now toggle-based in MessageInput, no auto-detection needed */
     return null
   },
-
-  // Services are called directly from ChatOverlay using the search module
-  // This plugin provides prompt additions and trigger detection
 }
 
 export default searchPlugin
