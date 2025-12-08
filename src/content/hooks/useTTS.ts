@@ -48,9 +48,14 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
   const sentenceBufferRef = useRef<string>('')
   const streamingTtsFailedRef = useRef<boolean>(false)
   const busUnsubRef = useRef<(() => void) | null>(null)
+  const busStreamEndUnsubRef = useRef<(() => void) | null>(null)
   const fullTextBufferRef = useRef<string>('')
   const pendingSentencesRef = useRef<string[]>([])
   const wsReadyRef = useRef<boolean>(false)
+  const statusRef = useRef(status)
+  const isStreamingActiveRef = useRef(false)
+
+  statusRef.current = status
 
   /**
    * Initialize non-streaming TTS service with Hub credentials and companion voice
@@ -86,53 +91,90 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
   }, [enabled, volume, activeCompanionSlug, hubUrl, hubAccessToken])
 
   /**
-   * Streaming TTS: Set up bus subscription when 'sending' starts
+   * Streaming TTS: Set up bus subscription for stream events
    *
-   * Uses refs to persist subscription across status changes (sending -> streaming)
+   * Creates subscription immediately when TTS is enabled (not tied to status)
+   * to avoid race condition where status changes before effect runs.
+   * Resets buffers when a new stream starts (status becomes 'sending').
    */
   useEffect(() => {
     if (!enabled || !hubUrl || !hubAccessToken) {
+      if (busUnsubRef.current) {
+        busUnsubRef.current()
+        busUnsubRef.current = null
+      }
+      if (busStreamEndUnsubRef.current) {
+        busStreamEndUnsubRef.current()
+        busStreamEndUnsubRef.current = null
+      }
       return
     }
 
-    if (status === 'sending') {
-      sentenceBufferRef.current = ''
-      fullTextBufferRef.current = ''
-      pendingSentencesRef.current = []
-      wsReadyRef.current = false
-      streamingTtsFailedRef.current = false
+    if (!busUnsubRef.current) {
+      busUnsubRef.current = bus.on('stream', (delta: string) => {
+        if (!isStreamingActiveRef.current) {
+          sentenceBufferRef.current = ''
+          fullTextBufferRef.current = ''
+          pendingSentencesRef.current = []
+          wsReadyRef.current = false
+          streamingTtsFailedRef.current = false
+          isStreamingActiveRef.current = true
+          log.log('[useTTS] Stream started, buffers reset')
+        }
 
-      if (!busUnsubRef.current) {
-        busUnsubRef.current = bus.on('stream', (delta: string) => {
-          sentenceBufferRef.current += delta
-          fullTextBufferRef.current += delta
-          const { sentences, remaining } = extractCompleteSentences(sentenceBufferRef.current)
-          sentenceBufferRef.current = remaining
+        sentenceBufferRef.current += delta
+        fullTextBufferRef.current += delta
+        const { sentences, remaining } = extractCompleteSentences(sentenceBufferRef.current)
+        sentenceBufferRef.current = remaining
 
-          for (const sentence of sentences) {
-            if (sentence.trim()) {
-              if (wsReadyRef.current && streamingTtsRef.current) {
-                streamingTtsRef.current.sendText(sentence)
-              } else {
-                pendingSentencesRef.current.push(sentence)
-              }
+        for (const sentence of sentences) {
+          if (sentence.trim()) {
+            if (wsReadyRef.current && streamingTtsRef.current) {
+              streamingTtsRef.current.sendText(sentence)
+            } else {
+              pendingSentencesRef.current.push(sentence)
             }
           }
-        })
-        log.log('[useTTS] Bus subscription created')
+        }
+      })
+      log.log('[useTTS] Bus stream subscription created')
+    }
+
+    if (!busStreamEndUnsubRef.current) {
+      busStreamEndUnsubRef.current = bus.on('streamEnd', () => {
+        log.log('[useTTS] Stream ended')
+        const remainingText = sentenceBufferRef.current.trim()
+
+        if (remainingText) {
+          if (streamingTtsRef.current && wsReadyRef.current) {
+            log.log('[useTTS] Flushing remaining text via WebSocket')
+            streamingTtsRef.current.sendText(remainingText, true)
+            sentenceBufferRef.current = ''
+          } else {
+            log.log('[useTTS] WebSocket not ready, remaining text will be handled by fallback')
+          }
+        }
+      })
+      log.log('[useTTS] Bus streamEnd subscription created')
+    }
+
+    return () => {
+      if (busUnsubRef.current) {
+        busUnsubRef.current()
+        busUnsubRef.current = null
+      }
+      if (busStreamEndUnsubRef.current) {
+        busStreamEndUnsubRef.current()
+        busStreamEndUnsubRef.current = null
       }
     }
-  }, [status, enabled, hubUrl, hubAccessToken])
+  }, [enabled, hubUrl, hubAccessToken])
 
   /**
    * Streaming TTS: Connect WebSocket when streaming starts
    */
   useEffect(() => {
     if (!enabled) {
-      if (busUnsubRef.current) {
-        busUnsubRef.current()
-        busUnsubRef.current = null
-      }
       if (streamingTtsRef.current) {
         streamingTtsRef.current.destroy()
         streamingTtsRef.current = null
@@ -257,25 +299,41 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
   }, [status, enabled, hubUrl, hubAccessToken, volume, activeCompanionSlug])
 
   /**
-   * Cleanup and fallback when streaming ends
+   * Fallback when streaming ends
    */
   useEffect(() => {
     if (status !== 'idle' && status !== 'error' && status !== 'canceled') {
       return
     }
 
-    if (busUnsubRef.current) {
-      busUnsubRef.current()
-      busUnsubRef.current = null
-      log.log('[useTTS] Bus subscription removed')
-    }
-
+    const wasStreamingActive = isStreamingActiveRef.current
     wsReadyRef.current = false
+    isStreamingActiveRef.current = false
 
-    if (streamingTtsFailedRef.current && fullTextBufferRef.current.trim()) {
-      log.log('[useTTS] Falling back to non-streaming TTS')
+    const hasUnsentText = fullTextBufferRef.current.trim().length > 0
+    const streamingFailed = streamingTtsFailedRef.current
+    const hadNoAudio = streamingTtsRef.current ? !streamingTtsRef.current.hasReceivedAudio() : true
+    const hasPendingSentences = pendingSentencesRef.current.length > 0
+    const hasRemainingBuffer = sentenceBufferRef.current.trim().length > 0
+
+    const shouldFallback = wasStreamingActive && hasUnsentText && (
+      streamingFailed ||
+      hadNoAudio ||
+      hasPendingSentences ||
+      hasRemainingBuffer
+    )
+
+    if (shouldFallback) {
+      log.log('[useTTS] Falling back to non-streaming TTS', {
+        streamingFailed,
+        hadNoAudio,
+        hasPendingSentences,
+        hasRemainingBuffer
+      })
       const textToSpeak = fullTextBufferRef.current
       fullTextBufferRef.current = ''
+      sentenceBufferRef.current = ''
+      pendingSentencesRef.current = []
       bus.emit('avatar', { type: 'speaking:start' })
       ttsService.speak(textToSpeak)
         .then(() => bus.emit('avatar', { type: 'speaking:stop' }))

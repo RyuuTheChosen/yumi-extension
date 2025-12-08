@@ -21,6 +21,8 @@ class TTSService {
   private abortController: AbortController | null = null
   private hubUrl: string = ''
   private hubAccessToken: string = ''
+  private audioEndedHandler: (() => void) | null = null
+  private audioErrorHandler: ((e: Event) => void) | null = null
 
   /**
    * Initialize the TTS service with Hub credentials.
@@ -142,15 +144,14 @@ class TTSService {
       this.audioElement.volume = this.settings.volume
       this.audioElement.src = this.currentBlobUrl
 
-      const onEnded = () => {
+      this.audioEndedHandler = () => {
         this.emit({ type: 'speaking:end' })
         ttsCoordinator.clearActive()
         this.cleanupAudio()
         resolve()
       }
 
-      // Handle audio error
-      const onError = (e: Event) => {
+      this.audioErrorHandler = (e: Event) => {
         const error = (e.target as HTMLAudioElement).error
         this.emit({
           type: 'speaking:error',
@@ -160,8 +161,8 @@ class TTSService {
         reject(new Error(error?.message ?? 'Audio playback failed'))
       }
 
-      this.audioElement.addEventListener('ended', onEnded, { once: true })
-      this.audioElement.addEventListener('error', onError, { once: true })
+      this.audioElement.addEventListener('ended', this.audioEndedHandler, { once: true })
+      this.audioElement.addEventListener('error', this.audioErrorHandler, { once: true })
 
       // Try to integrate with lip sync if available
       const connectAndPlay = (window as any).__yumiConnectAndPlayAudio
@@ -196,14 +197,21 @@ class TTSService {
    * Cleanup audio resources.
    */
   private cleanupAudio(): void {
+    if (this.audioElement) {
+      if (this.audioEndedHandler) {
+        this.audioElement.removeEventListener('ended', this.audioEndedHandler)
+        this.audioEndedHandler = null
+      }
+      if (this.audioErrorHandler) {
+        this.audioElement.removeEventListener('error', this.audioErrorHandler)
+        this.audioErrorHandler = null
+      }
+      this.audioElement.pause()
+      this.audioElement = null
+    }
     if (this.currentBlobUrl) {
       URL.revokeObjectURL(this.currentBlobUrl)
       this.currentBlobUrl = null
-    }
-    if (this.audioElement) {
-      this.audioElement.pause()
-      this.audioElement.src = ''
-      this.audioElement = null
     }
   }
 
