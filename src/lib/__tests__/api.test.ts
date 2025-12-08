@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { signatureHeaders } from '../api'
+import { signatureHeaders } from '../core/api'
 import { createHash } from 'node:crypto'
 
 const BODY = JSON.stringify({ hello: 'world' })

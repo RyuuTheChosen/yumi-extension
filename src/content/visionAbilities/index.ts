@@ -3,7 +3,7 @@ import { ImageUnderstanding } from './ImageUnderstanding'
 import { injectVisionStyles } from './utils'
 import { mergeVisionConfig } from '../../lib/types/visionConfig'
 import type { VisionConfig } from '../../lib/types/visionConfig'
-import { createLogger } from '../../lib/debug'
+import { createLogger } from '../../lib/core/debug'
 
 const log = createLogger('VisionAbilities')
 

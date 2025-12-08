@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { createLogger } from '../../lib/debug'
+import { createLogger } from '../../lib/core/debug'
 import {
   shouldSuggestSearch,
   extractSearchQuery,

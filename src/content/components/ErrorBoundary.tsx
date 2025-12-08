@@ -1,5 +1,5 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react'
-import { createLogger } from '../../lib/debug'
+import { createLogger } from '../../lib/core/debug'
 
 const log = createLogger('ErrorBoundary')
 

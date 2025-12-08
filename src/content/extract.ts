@@ -7,7 +7,7 @@
 
 import { useContextStore, extractPageContext } from '../lib/context'
 import type { PageContext } from '../lib/context'
-import { createLogger } from '../lib/debug'
+import { createLogger } from '../lib/core/debug'
 
 const log = createLogger('Extract')
 

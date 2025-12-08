@@ -6,7 +6,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { createLogger } from '../../lib/debug'
+import { createLogger } from '../../lib/core/debug'
 
 const log = createLogger('ExpressionDebug')
 

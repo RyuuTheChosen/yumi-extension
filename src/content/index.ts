@@ -1,6 +1,6 @@
 import { extractMainContent } from './extract'
-import { bus } from '../lib/bus'
-import { createLogger } from '../lib/debug'
+import { bus } from '../lib/core/bus'
+import { createLogger } from '../lib/core/debug'
 import { detectPageType } from '../lib/memory'
 import { getActiveCompanion } from '../lib/companions/loader'
 
@@ -216,19 +216,29 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
 	if (!changes['settings-store']) return
 	log.log(' Settings changed:', changes['settings-store'])
 
-	// Parse the JSON strings stored by zustand-chrome-storage
+	/** Parse the JSON strings stored by zustand-chrome-storage */
 	let oldVal, newVal
 	const rawOldVal = changes['settings-store'].oldValue
 	const rawNewVal = changes['settings-store'].newValue
 
 	if (typeof rawOldVal === 'string') {
-		oldVal = JSON.parse(rawOldVal)
+		try {
+			oldVal = JSON.parse(rawOldVal)
+		} catch {
+			log.warn(' Failed to parse oldValue, using undefined')
+			oldVal = undefined
+		}
 	} else {
 		oldVal = rawOldVal
 	}
 
 	if (typeof rawNewVal === 'string') {
-		newVal = JSON.parse(rawNewVal)
+		try {
+			newVal = JSON.parse(rawNewVal)
+		} catch {
+			log.warn(' Failed to parse newValue, using undefined')
+			newVal = undefined
+		}
 	} else {
 		newVal = rawNewVal
 	}

@@ -12,7 +12,7 @@ import {
   uninstallCompanion,
 } from '../lib/companions'
 import { useSettingsStore } from '../lib/stores/settings.store'
-import { createLogger } from '../lib/debug'
+import { createLogger } from '../lib/core/debug'
 
 const log = createLogger('ExternalMessaging')
 

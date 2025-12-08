@@ -8,7 +8,7 @@
  * - Level 3: Deep/site-specific - heavy
  */
 
-import { createLogger } from '../debug'
+import { createLogger } from '../core/debug'
 import type {
   PageContext,
   PageMetadata,

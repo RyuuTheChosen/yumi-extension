@@ -42,9 +42,6 @@ export {
   MEMORY_DB_CONFIG,
 } from './types'
 
-// Store
-export { useMemoryStore, calculateDecayedImportance, migrateLocalMemories } from './memoryStore'
-
 // Database
 export {
   initMemoryDB,
@@ -62,69 +59,14 @@ export {
   getRecentMemories,
 } from './db'
 
-// Extraction
-export {
-  extractMemoriesFromConversation,
-  containsSensitiveContent,
-  filterSensitiveMemories,
-  parseExtractionResponse,
-  shouldExtract,
-  getUnprocessedMessages,
-} from './extraction'
+// Store
+export * from './store'
 
-export type { ConversationMessage } from './extraction'
+// Extraction
+export * from './extraction'
 
 // Retrieval
-export {
-  scoreRelevance,
-  retrieveRelevantMemories,
-  buildMemoryContext,
-  buildConciseMemoryContext,
-  estimateTokenCount,
-  selectMemoriesForContext,
-  getMemoriesForPrompt,
-  updateKeywordIndexCache,
-} from './retrieval'
+export * from './retrieval'
 
-// Keywords (Phase 2)
-export {
-  extractKeywords,
-  extractEntities,
-  jaccardSimilarity,
-  buildKeywordIndex,
-  isTechTerm,
-} from './keywords'
-
-// Prompts
-export {
-  MEMORY_EXTRACTION_SYSTEM_PROMPT,
-  buildExtractionPrompt,
-  buildExtractionPromptWithContext,
-} from './prompts'
-
-// Proactive Memory System (Phase 3)
-export {
-  getFollowUpCandidates,
-  extractSubject,
-} from './followUp'
-
-export type { FollowUpCandidate, FollowUpReason } from './followUp'
-
-export {
-  findContextMatches,
-  detectPageType,
-} from './contextMatcher'
-
-export type { ContextMatch, PageContext } from './contextMatcher'
-
-export {
-  ProactiveMemoryController,
-  loadProactiveHistory,
-} from './proactiveController'
-
-export type {
-  ProactiveAction,
-  ProactiveActionType,
-  ProactiveConfig,
-  ProactiveHistoryEntry,
-} from './proactiveController'
+// Proactive
+export * from './proactive'

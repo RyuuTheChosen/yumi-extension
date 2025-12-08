@@ -11,14 +11,17 @@
  */
 
 import { assembleSystemPrompt, DEFAULT_PERSONALITY, createPersonality } from './personality'
+import { buildPluginPromptAdditions as getPluginPromptAdditions } from './plugins/loader'
 
 /**
  * Page context info passed to prompt builder
  */
 export interface PageContextInfo {
   pageType?: string
-  selectedContext?: string  // User-selected content from right-click context menu
-  searchContext?: string  // Web search results context
+  pageUrl?: string
+  pageTitle?: string
+  selectedContext?: string
+  searchContext?: string
 }
 
 /**
@@ -114,6 +117,19 @@ export function buildChatSystemPrompt(
     selectedContext: pageInfo?.selectedContext,
     searchContext: pageInfo?.searchContext,
   })
+
+  // Add plugin-specific prompt additions
+  const companionName = personality?.name || DEFAULT_PERSONALITY.name
+  const pluginAdditions = getPluginPromptAdditions({
+    companionName,
+    pageUrl: pageInfo?.pageUrl,
+    pageTitle: pageInfo?.pageTitle,
+    hasMemories: !!memoryContext?.trim(),
+  })
+
+  if (pluginAdditions) {
+    prompt += `\n\n## Active Capabilities\n${pluginAdditions}`
+  }
 
   // Add conversational context (the only dynamic part)
   prompt += `\n\n## Current Session\n`

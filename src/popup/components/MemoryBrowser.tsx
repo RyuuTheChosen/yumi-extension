@@ -4,7 +4,7 @@ import { Brain, Search, Trash2, X, MessageCircle, Clock } from 'lucide-react'
 import { cn } from '../../lib/design/utils'
 import { useMemoryStore, loadProactiveHistory } from '../../lib/memory'
 import type { Memory, MemoryType, ProactiveHistoryEntry } from '../../lib/memory'
-import { createLogger } from '../../lib/debug'
+import { createLogger } from '../../lib/core/debug'
 
 const log = createLogger('MemoryBrowser')
 

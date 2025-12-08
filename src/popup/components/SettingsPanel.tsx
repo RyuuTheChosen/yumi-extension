@@ -5,7 +5,7 @@ import { cn } from '../../lib/design/utils'
 import { VisionSettings } from './VisionSettings'
 import { MemoryBrowser } from './MemoryBrowser'
 import { getInstalledCompanions, getCompanionFileUrl, type StoredCompanion } from '../../lib/companions/db'
-import { createLogger } from '../../lib/debug'
+import { createLogger } from '../../lib/core/debug'
 
 const log = createLogger('SettingsPanel')
 

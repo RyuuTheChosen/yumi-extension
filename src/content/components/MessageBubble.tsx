@@ -4,7 +4,7 @@ import { Copy, Check } from 'lucide-react';
 import { cn, formatTimestamp } from '../../lib/design/utils';
 import { useChatStore } from '../../lib/stores/chat.store';
 import type { SearchResult } from '../../lib/search/types';
-import { createLogger } from '../../lib/debug';
+import { createLogger } from '../../lib/core/debug';
 
 const log = createLogger('MessageBubble');
 

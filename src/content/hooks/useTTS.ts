@@ -6,10 +6,10 @@
  */
 
 import { useEffect, useRef } from 'react'
-import { createLogger } from '../../lib/debug'
+import { createLogger } from '../../lib/core/debug'
 import { ttsService } from '../../lib/tts'
 import { StreamingTTSService, extractCompleteSentences } from '../../lib/tts/streamingTts'
-import { bus } from '../../lib/bus'
+import { bus } from '../../lib/core/bus'
 import { getActiveCompanion } from '../../lib/companions/loader'
 
 const log = createLogger('useTTS')

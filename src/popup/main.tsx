@@ -4,7 +4,7 @@ import { App } from './App'
 import { useSettingsStore } from '../lib/stores/settings.store'
 import { usePersonalityStore } from '../lib/stores/personality.store'
 import '../styles/tailwind.css'
-import { createLogger } from '../lib/debug'
+import { createLogger } from '../lib/core/debug'
 
 const log = createLogger('Popup')
 

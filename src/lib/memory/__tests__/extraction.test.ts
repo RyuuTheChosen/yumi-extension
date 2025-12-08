@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseExtractionResponse, filterSensitiveMemories, containsSensitiveContent } from '../extraction'
+import { parseExtractionResponse, filterSensitiveMemories, containsSensitiveContent } from '..'
 
 describe('Memory Extraction', () => {
   describe('parseExtractionResponse', () => {

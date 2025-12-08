@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Yumi - AI Web Pals",
   "version": "1.0.0",
-  "description": "AI companions in your browser. Animated Live2D avatars with memory, vision, and voice - chat anywhere.",
+  "description": "Chat with an animated AI companion on any webpage. Features memory, voice, page awareness, and image understanding.",
   "icons": {
     "16": "icons/icon-16.png",
     "32": "icons/icon-32.png",
@@ -13,10 +13,6 @@
     "storage",
     "contextMenus",
     "activeTab"
-  ],
-  "host_permissions": [
-    "https://api.openai.com/*",
-    "https://api.deepseek.com/*"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"

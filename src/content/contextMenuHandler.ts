@@ -5,7 +5,7 @@
  * Provides content to the chat overlay for user-driven page reading.
  */
 
-import { createLogger } from '../lib/debug'
+import { createLogger } from '../lib/core/debug'
 
 const log = createLogger('ContextMenu')
 

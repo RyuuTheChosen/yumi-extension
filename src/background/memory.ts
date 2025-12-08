@@ -5,9 +5,9 @@
  * Routes through Hub API with quota exemption for memory operations.
  */
 
-import { createLogger } from '../lib/debug'
-import { MODELS, API, SAMPLING } from '../lib/constants'
-import { getErrorMessage } from '../lib/errors'
+import { createLogger } from '../lib/core/debug'
+import { MODELS, API, SAMPLING } from '../lib/config/constants'
+import { getErrorMessage } from '../lib/core/errors'
 import { tryRefreshHubToken, type HubConfig } from './auth'
 import type { SettingsStateWithAuth } from '../types'
 

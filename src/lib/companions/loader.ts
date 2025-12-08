@@ -12,7 +12,7 @@ import {
   revokeCompanionBlobUrls,
   type StoredCompanion,
 } from './db'
-import { createLogger } from '../debug'
+import { createLogger } from '../core/debug'
 
 const log = createLogger('CompanionLoader')
 

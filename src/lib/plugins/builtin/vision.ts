@@ -6,7 +6,46 @@
  */
 
 import type { Plugin, PromptContext, TriggerResult } from '../types'
-import { isVisionQuery } from '../../context/visionTrigger'
+
+/**
+ * Keywords that indicate user wants visual analysis
+ */
+const VISION_TRIGGERS = [
+  'look at this',
+  'look at the',
+  'look at my',
+  'can you see',
+  'what do you see',
+  'show me',
+  'take a look',
+  'check this out',
+  'see this',
+  'see what',
+  'look here',
+  'screenshot',
+  'screen',
+  "what's on my screen",
+  'what am i looking at',
+  'what is this showing',
+  'the image',
+  'the picture',
+  'the photo',
+  'the chart',
+  'the graph',
+  'the diagram',
+  'the layout',
+  'the design',
+  'the ui',
+  'the interface',
+]
+
+/**
+ * Check if the query requests visual/screenshot analysis
+ */
+function isVisionQuery(query: string): boolean {
+  const lower = query.toLowerCase()
+  return VISION_TRIGGERS.some(trigger => lower.includes(trigger))
+}
 
 export const visionPlugin: Plugin = {
   manifest: {

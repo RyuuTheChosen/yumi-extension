@@ -7,7 +7,7 @@
 
 import type { Memory, MemoryType } from './types'
 import { MEMORY_DB_CONFIG } from './types'
-import { createLogger } from '../debug'
+import { createLogger } from '../core/debug'
 
 const log = createLogger('MemoryDB')
 const { dbName, storeName, version } = MEMORY_DB_CONFIG

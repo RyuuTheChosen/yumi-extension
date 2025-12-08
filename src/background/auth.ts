@@ -5,7 +5,7 @@
  * Implements automatic token renewal when access tokens expire.
  */
 
-import { createLogger } from '../lib/debug'
+import { createLogger } from '../lib/core/debug'
 import type { HubUser, SettingsStateWithAuth } from '../types'
 
 const log = createLogger('Auth')
@@ -79,22 +79,32 @@ export async function updateHubAuth(
   refreshToken: string | null,
   user: HubUser | null
 ): Promise<void> {
-  const data = await chrome.storage.local.get('settings-store')
-  let settingsStore: PersistedStore<SettingsStateWithAuth>
+  try {
+    const data = await chrome.storage.local.get('settings-store')
+    let settingsStore: PersistedStore<SettingsStateWithAuth>
 
-  if (typeof data?.['settings-store'] === 'string') {
-    settingsStore = JSON.parse(data['settings-store'])
-  } else {
-    settingsStore = data?.['settings-store'] || { state: {}, version: 0 }
+    if (typeof data?.['settings-store'] === 'string') {
+      try {
+        settingsStore = JSON.parse(data['settings-store'])
+      } catch {
+        log.warn('[Auth] Failed to parse settings-store, using defaults')
+        settingsStore = { state: {} as SettingsStateWithAuth, version: 0 }
+      }
+    } else {
+      settingsStore = data?.['settings-store'] || { state: {} as SettingsStateWithAuth, version: 0 }
+    }
+
+    settingsStore.state = {
+      ...settingsStore.state,
+      hubAccessToken: accessToken || undefined,
+      hubRefreshToken: refreshToken || undefined,
+      hubUser: user || undefined
+    }
+
+    await chrome.storage.local.set({ 'settings-store': JSON.stringify(settingsStore) })
+    log.log('[Auth] Hub auth updated in storage')
+  } catch (err) {
+    log.error('[Auth] Failed to update Hub auth in storage:', err)
+    throw err
   }
-
-  settingsStore.state = {
-    ...settingsStore.state,
-    hubAccessToken: accessToken || undefined,
-    hubRefreshToken: refreshToken || undefined,
-    hubUser: user || undefined
-  }
-
-  await chrome.storage.local.set({ 'settings-store': JSON.stringify(settingsStore) })
-  log.log('[Auth] Hub auth updated in storage')
 }

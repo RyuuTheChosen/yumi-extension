@@ -11,7 +11,7 @@ import type {
   StreamingTTSInMessage,
   StreamingTTSState,
 } from './types'
-import { createLogger } from '../debug'
+import { createLogger } from '../core/debug'
 
 const log = createLogger('StreamingTTS')
 

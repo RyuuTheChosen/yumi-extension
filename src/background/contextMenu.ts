@@ -5,9 +5,9 @@
  * Provides menu items for image analysis, text selection, and page reading.
  */
 
-import { createLogger } from '../lib/debug'
-import { CONTEXT_MENU_IDS, MESSAGE_TYPES } from '../lib/constants'
-import { getErrorMessage } from '../lib/errors'
+import { createLogger } from '../lib/core/debug'
+import { CONTEXT_MENU_IDS, MESSAGE_TYPES } from '../lib/config/constants'
+import { getErrorMessage } from '../lib/core/errors'
 
 const log = createLogger('ContextMenu')
 

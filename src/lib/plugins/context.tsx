@@ -8,8 +8,8 @@ import {
   getActivePlugin,
   cleanupAllPlugins,
 } from './loader'
-import { bus } from '../bus'
-import { createLogger } from '../debug'
+import { bus } from '../core/bus'
+import { createLogger } from '../core/debug'
 
 const log = createLogger('PluginContext')
 

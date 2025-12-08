@@ -3,7 +3,7 @@
 
 // ESM imports for bundling with Vite
 import * as PIXI from 'pixi.js'
-import { createLogger } from '../lib/debug'
+import { createLogger } from '../lib/core/debug'
 import { AVATAR, BREAKPOINTS } from '../lib/design/dimensions'
 import { sttService } from '../lib/stt/sttService'
 import { useSettingsStore } from '../lib/stores/settings.store'

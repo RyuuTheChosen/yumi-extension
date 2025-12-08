@@ -5,7 +5,7 @@
  * Logs warnings when thresholds are exceeded.
  */
 
-import { createLogger } from '../debug'
+import { createLogger } from '../core/debug'
 
 const log = createLogger('Performance')
 

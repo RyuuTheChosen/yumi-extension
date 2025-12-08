@@ -11,7 +11,7 @@
  */
 
 import { isChatOverlayOpen } from '../chatState'
-import { createLogger } from '../../lib/debug'
+import { createLogger } from '../../lib/core/debug'
 
 const log = createLogger('FloatingBubble')
 

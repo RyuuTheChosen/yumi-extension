@@ -5,10 +5,10 @@
  * Manages streaming responses to content script via Chrome ports.
  */
 
-import { createLogger } from '../lib/debug'
+import { createLogger } from '../lib/core/debug'
 import { buildChatSystemPrompt } from '../lib/prompts'
-import { API, SAMPLING, MODELS } from '../lib/constants'
-import { getErrorMessage } from '../lib/errors'
+import { API, SAMPLING, MODELS } from '../lib/config/constants'
+import { getErrorMessage } from '../lib/core/errors'
 import { tryRefreshHubToken, type HubConfig } from './auth'
 import type {
   SettingsStateWithAuth,

@@ -3,7 +3,7 @@ import { Send, Mic, Loader2 } from 'lucide-react';
 import { cn } from '../../lib/design/utils';
 import { sttService } from '../../lib/stt/sttService';
 import type { STTState, STTEvent } from '../../lib/stt/types';
-import { createLogger } from '../../lib/debug';
+import { createLogger } from '../../lib/core/debug';
 
 const log = createLogger('MessageInput');
 

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import { debouncedChromeStorage } from '../zustandChromeStorage'
+import { debouncedChromeStorage } from '../core/zustandChromeStorage'
 import {
   Personality,
   createPersonality,
@@ -8,7 +8,7 @@ import {
   assembleSystemPrompt,
   DEFAULT_PERSONALITY,
 } from '../personality'
-import { createLogger } from '../debug'
+import { createLogger } from '../core/debug'
 
 const log = createLogger('Personality')
 

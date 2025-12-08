@@ -73,7 +73,7 @@ export interface PluginState {
 }
 
 // Built-in plugin IDs
-export const BUILTIN_PLUGINS = ['search', 'memory', 'tts', 'vision'] as const
+export const BUILTIN_PLUGINS = ['search', 'memory', 'tts', 'vision', 'solana'] as const
 export type BuiltinPluginId = (typeof BUILTIN_PLUGINS)[number]
 
 // Capabilities schema for personality.json

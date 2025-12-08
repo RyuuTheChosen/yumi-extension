@@ -3,7 +3,7 @@
  * The port connection is established by usePortConnection hook in the chat overlay
  */
 
-import { createLogger } from '../lib/debug'
+import { createLogger } from '../lib/core/debug'
 
 const log = createLogger('PortManager')
 

@@ -6,7 +6,7 @@ import {
   getRegisteredPluginIds,
   isPluginRegistered,
 } from './registry'
-import { createLogger } from '../debug'
+import { createLogger } from '../core/debug'
 
 const log = createLogger('PluginLoader')
 

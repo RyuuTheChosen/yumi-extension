@@ -1,7 +1,7 @@
 // Prelude script - Runs FIRST before Cubism SDK loads
 // Configures Module.locateFile to tell Emscripten where to find WASM files
 
-import { createLogger } from '../lib/debug'
+import { createLogger } from '../lib/core/debug'
 
 const log = createLogger('Prelude')
 

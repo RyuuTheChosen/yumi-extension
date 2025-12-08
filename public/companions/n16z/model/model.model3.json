@@ -1,0 +1,33 @@
+{
+	"Version": 3,
+	"FileReferences": {
+		"Moc": "model.moc3",
+		"Textures": [
+			"textures/texture_00.png",
+			"textures/texture_01.png"
+		],
+		"Physics": "model.physics3.json",
+		"DisplayInfo": "model.cdi3.json",
+		"Expressions": [
+			{ "Name": "Angry", "File": "expressions/Angry.exp3.json" },
+			{ "Name": "Happy", "File": "expressions/Happy.exp3.json" },
+			{ "Name": "Hat off", "File": "expressions/Hat off.exp3.json" },
+			{ "Name": "Sad", "File": "expressions/Sad.exp3.json" }
+		]
+	},
+	"Groups": [
+		{
+			"Target": "Parameter",
+			"Name": "LipSync",
+			"Ids": []
+		},
+		{
+			"Target": "Parameter",
+			"Name": "EyeBlink",
+			"Ids": [
+				"ParamEyeLOpen",
+				"ParamEyeROpen"
+			]
+		}
+	]
+}

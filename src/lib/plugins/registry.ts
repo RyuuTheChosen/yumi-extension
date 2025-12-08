@@ -1,5 +1,5 @@
 import type { Plugin, RegisteredPlugin, PluginState } from './types'
-import { createLogger } from '../debug'
+import { createLogger } from '../core/debug'
 
 const log = createLogger('PluginRegistry')
 

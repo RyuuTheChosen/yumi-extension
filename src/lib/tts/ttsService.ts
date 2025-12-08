@@ -6,7 +6,7 @@
 
 import type { TTSSettings, TTSEvent, TTSPlaybackState } from './types'
 import { DEFAULT_TTS_SETTINGS } from './types'
-import { createLogger } from '../debug'
+import { createLogger } from '../core/debug'
 
 const log = createLogger('TTS')
 

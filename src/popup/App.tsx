@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { SettingsPanel } from './components/SettingsPanel'
 import { useSettingsStore } from '../lib/stores/settings.store'
 import { usePersonalityStore } from '../lib/stores/personality.store'
-import { createLogger } from '../lib/debug'
+import { createLogger } from '../lib/core/debug'
 
 const log = createLogger('Popup')
 

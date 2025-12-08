@@ -1,6 +1,6 @@
 import type { STTSettings, STTEvent, STTState } from './types'
 import { DEFAULT_STT_SETTINGS } from './types'
-import { createLogger } from '../debug'
+import { createLogger } from '../core/debug'
 
 const log = createLogger('STT')
 

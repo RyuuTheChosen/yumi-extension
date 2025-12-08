@@ -52,4 +52,4 @@ export {
   setupNavigationListener,
   getCurrentContext,
   isContextStale,
-} from './contextStore'
+} from './context.store'

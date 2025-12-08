@@ -6,7 +6,7 @@
  */
 
 import { useState, useEffect } from 'react'
-import { createLogger } from '../../lib/debug'
+import { createLogger } from '../../lib/core/debug'
 import { setChatOpen } from '../chatState'
 
 const log = createLogger('useContextMenu')

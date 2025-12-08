@@ -6,8 +6,8 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { createLogger } from '../../lib/debug'
-import { bus, type PageReadyContext } from '../../lib/bus'
+import { createLogger } from '../../lib/core/debug'
+import { bus, type PageReadyContext } from '../../lib/core/bus'
 import { ttsService } from '../../lib/tts'
 import { useScopedChatStore } from '../stores/scopedChat.store'
 import { useMemoryStore } from '../../lib/memory'

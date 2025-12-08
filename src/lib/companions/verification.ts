@@ -6,7 +6,7 @@
  */
 
 import { PACKAGE_VERIFICATION_PUBLIC_KEY, PACKAGE_SIGNING_ENABLED } from './publicKey'
-import { createLogger } from '../debug'
+import { createLogger } from '../core/debug'
 
 const log = createLogger('PackageVerification')
 

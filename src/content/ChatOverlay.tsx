@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { createLogger } from '../lib/debug'
+import { createLogger } from '../lib/core/debug'
 import { CHAT } from '../lib/design/dimensions'
 import { useScopedChatStore } from './stores/scopedChat.store'
 import { usePersonalityStore } from '../lib/stores/personality.store'
@@ -24,7 +24,7 @@ import {
   getMemoriesForPrompt,
   migrateLocalMemories,
 } from '../lib/memory'
-import { isVisionQuery } from '../lib/context/visionTrigger'
+import { checkPluginTriggers } from '../lib/plugins/loader'
 import { extractPageContext } from '../lib/context'
 import { formatSearchResultsForPrompt, type SearchResult } from '../lib/search'
 
@@ -277,11 +277,12 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
     setPrefilledContext(null)
     setContextSource(null)
 
-    const wantsVision = isVisionQuery(content)
+    const trigger = checkPluginTriggers(content)
+    const wantsVision = trigger?.pluginId === 'vision' && trigger?.data?.needsScreenshot
     let screenshotBase64: string | null = null
 
     if (wantsVision) {
-      log.log('[ChatOverlay] Vision query detected, capturing screenshot...')
+      log.log('[ChatOverlay] Vision query detected via plugin, capturing screenshot...')
       try {
         const response = await new Promise<{ success: boolean; screenshot?: string; error?: string }>((resolve) => {
           chrome.runtime.sendMessage({ type: 'CAPTURE_SCREENSHOT' }, resolve)

@@ -26,12 +26,14 @@ if (typeof g.window.clearTimeout !== 'function') {
   g.window.clearTimeout = g.clearTimeout.bind(g)
 }
 
-// Provide a very small chrome.storage and runtime mock for tests
-// Tests can further spy/override per-case.
+/** Provide a small chrome.storage and runtime mock for tests */
 if (!g.chrome) g.chrome = {} as any
 if (!g.chrome.runtime) g.chrome.runtime = {} as any
 if (typeof g.chrome.runtime.sendMessage !== 'function') {
   g.chrome.runtime.sendMessage = () => {}
+}
+if (typeof g.chrome.runtime.getURL !== 'function') {
+  g.chrome.runtime.getURL = (path: string) => `chrome-extension://test-extension-id/${path}`
 }
 
 const memory = new Map<string, string>()

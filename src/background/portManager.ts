@@ -5,8 +5,8 @@
  * Manages port registration, message routing, heartbeat, and cleanup.
  */
 
-import { createLogger } from '../lib/debug'
-import { PORT_NAMES } from '../lib/constants'
+import { createLogger } from '../lib/core/debug'
+import { PORT_NAMES } from '../lib/config/constants'
 import { streamToPort } from './streaming'
 import { handleVisionQuery } from './vision'
 

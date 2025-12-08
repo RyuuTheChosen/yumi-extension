@@ -1,8 +1,8 @@
 import type { LoadedCompanion, CompanionPersonality } from './types'
 import { getActiveCompanion as loadActiveCompanion, getDefaultCompanionId } from './loader'
 import { loadPluginsForCompanion, getActivePlugins, type Plugin } from '../plugins'
-import { bus } from '../bus'
-import { createLogger } from '../debug'
+import { bus } from '../core/bus'
+import { createLogger } from '../core/debug'
 
 const log = createLogger('CompanionManager')
 

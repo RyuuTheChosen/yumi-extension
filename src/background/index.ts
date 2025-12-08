@@ -5,16 +5,30 @@
  * Handles Chrome extension lifecycle and routes messages to appropriate handlers.
  */
 
-import { createLogger } from '../lib/debug'
+import { createLogger } from '../lib/core/debug'
 import { setupExternalMessaging } from './externalMessaging'
 import { initializeContextMenus, setupContextMenuHandlers } from './contextMenu'
 import { initializePortHandlers } from './portManager'
 import { handleMemoryExtraction } from './memory'
-import { AUDIO } from '../lib/constants'
-import { getErrorMessage } from '../lib/errors'
+import { AUDIO } from '../lib/config/constants'
+import { getErrorMessage } from '../lib/core/errors'
+import { registerBuiltinPlugins } from '../lib/plugins/builtin'
+import {
+  initMemoryDB,
+  getAllMemories,
+  saveMemory,
+  saveMemories,
+  deleteMemory,
+  clearAllMemories
+} from '../lib/memory/db'
 import type { RuntimeMessage } from '../types'
 
 const log = createLogger('Background')
+
+/**
+ * Register all builtin plugins with the registry
+ */
+registerBuiltinPlugins()
 
 /**
  * Setup external messaging for website communication
@@ -27,7 +41,14 @@ setupExternalMessaging()
 chrome.runtime.onInstalled.addListener(() => {
   log.log('[Background] Yumi installed/updated')
   initializeContextMenus()
+  // Initialize memory database
+  initMemoryDB().catch(err => log.error('Failed to init memory DB:', err))
 })
+
+/**
+ * Initialize memory database on service worker startup
+ */
+initMemoryDB().catch(err => log.error('Failed to init memory DB:', err))
 
 /**
  * Setup context menu click handlers
@@ -155,6 +176,86 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     (async () => {
       const response = await handleMemoryExtraction(msg.payload)
       sendResponse(response)
+    })()
+    return true
+  }
+
+  /**
+   * MEMORY_GET_ALL - Get all memories from IndexedDB
+   */
+  if (msg.type === 'MEMORY_GET_ALL') {
+    (async () => {
+      try {
+        const memories = await getAllMemories()
+        sendResponse({ success: true, memories })
+      } catch (err) {
+        log.error('Failed to get memories:', err)
+        sendResponse({ success: false, error: getErrorMessage(err) })
+      }
+    })()
+    return true
+  }
+
+  /**
+   * MEMORY_ADD - Save a single memory
+   */
+  if (msg.type === 'MEMORY_ADD') {
+    (async () => {
+      try {
+        await saveMemory(msg.payload.memory)
+        sendResponse({ success: true })
+      } catch (err) {
+        log.error('Failed to save memory:', err)
+        sendResponse({ success: false, error: getErrorMessage(err) })
+      }
+    })()
+    return true
+  }
+
+  /**
+   * MEMORY_ADD_BATCH - Save multiple memories
+   */
+  if (msg.type === 'MEMORY_ADD_BATCH') {
+    (async () => {
+      try {
+        await saveMemories(msg.payload.memories)
+        sendResponse({ success: true })
+      } catch (err) {
+        log.error('Failed to save memories:', err)
+        sendResponse({ success: false, error: getErrorMessage(err) })
+      }
+    })()
+    return true
+  }
+
+  /**
+   * MEMORY_DELETE - Delete a memory by ID
+   */
+  if (msg.type === 'MEMORY_DELETE') {
+    (async () => {
+      try {
+        await deleteMemory(msg.payload.id)
+        sendResponse({ success: true })
+      } catch (err) {
+        log.error('Failed to delete memory:', err)
+        sendResponse({ success: false, error: getErrorMessage(err) })
+      }
+    })()
+    return true
+  }
+
+  /**
+   * MEMORY_CLEAR_ALL - Clear all memories
+   */
+  if (msg.type === 'MEMORY_CLEAR_ALL') {
+    (async () => {
+      try {
+        await clearAllMemories()
+        sendResponse({ success: true })
+      } catch (err) {
+        log.error('Failed to clear memories:', err)
+        sendResponse({ success: false, error: getErrorMessage(err) })
+      }
     })()
     return true
   }

@@ -5,7 +5,7 @@
  * while supporting global cross-site threads when needed.
  */
 
-import { createLogger } from '../../lib/debug'
+import { createLogger } from '../../lib/core/debug'
 
 const log = createLogger('Scopes')
 

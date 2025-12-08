@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import { debouncedChromeStorage } from '../zustandChromeStorage'
-import { createLogger } from '../debug'
+import { debouncedChromeStorage } from '../core/zustandChromeStorage'
+import { createLogger } from '../core/debug'
 
 const log = createLogger('Settings')
 

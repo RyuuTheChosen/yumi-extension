@@ -1,0 +1,23 @@
+{
+  "id": "n16z",
+  "name": "N16z",
+  "version": "1.0.0",
+  "description": "Your crypto-savvy AI trading companion. Sharp, analytical, and always watching the Solana markets.",
+  "author": "Yumi Labs",
+  "preview": "preview.png",
+  "model": {
+    "entry": "model/model.model3.json",
+    "scale": 0.15,
+    "position": "bottom-right"
+  },
+  "personality": "personality.json",
+  "tags": [
+    "crypto",
+    "solana",
+    "trading",
+    "defi",
+    "memecoins"
+  ],
+  "createdAt": "2025-12-05",
+  "updatedAt": "2025-12-05"
+}

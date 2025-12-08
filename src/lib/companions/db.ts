@@ -6,7 +6,7 @@
  */
 
 import type { CompanionManifest, CompanionPersonality } from './types'
-import { createLogger } from '../debug'
+import { createLogger } from '../core/debug'
 
 const log = createLogger('CompanionDB')
 

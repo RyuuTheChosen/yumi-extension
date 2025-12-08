@@ -6,7 +6,7 @@ import { getCurrentScope } from '../utils/scopes'
 import { useScopedChatStore } from '../stores/scopedChat.store'
 import type { Message } from '../utils/db'
 import { bubbleManager, type VisionStage } from './FloatingResponseBubble'
-import { createLogger } from '../../lib/debug'
+import { createLogger } from '../../lib/core/debug'
 
 const log = createLogger('SelectionSpotter')
 

@@ -6,8 +6,8 @@
  */
 
 import { useEffect, useRef } from 'react'
-import { createLogger } from '../../lib/debug'
-import { bus } from '../../lib/bus'
+import { createLogger } from '../../lib/core/debug'
+import { bus } from '../../lib/core/bus'
 import { ttsService } from '../../lib/tts'
 import {
   extractMemoriesFromConversation,

@@ -5,10 +5,10 @@
  * Routes all queries through Hub API with automatic token refresh.
  */
 
-import { createLogger } from '../lib/debug'
+import { createLogger } from '../lib/core/debug'
 import { buildSingleStageVisionPrompt, VISION_UX_MESSAGES } from '../lib/prompts/vision'
-import { API, SAMPLING, MODELS } from '../lib/constants'
-import { getErrorMessage } from '../lib/errors'
+import { API, SAMPLING, MODELS } from '../lib/config/constants'
+import { getErrorMessage } from '../lib/core/errors'
 import { tryRefreshHubToken, type HubConfig } from './auth'
 import type {
   VisionQueryPayload,
