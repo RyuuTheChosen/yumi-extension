@@ -25,7 +25,7 @@ import {
   migrateLocalMemories,
 } from '../lib/memory'
 import { checkPluginTriggers } from '../lib/plugins/loader'
-import { extractPageContext } from '../lib/context'
+import { extractPageContext, buildContextForPrompt } from '../lib/context'
 import { formatSearchResultsForPrompt, type SearchResult } from '../lib/search'
 
 const log = createLogger('ChatOverlay')
@@ -307,10 +307,12 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
     )
 
     let pageType: string | undefined
+    let pageContent: string | undefined
     try {
       const extracted = await extractPageContext({ level: 2 })
       pageType = extracted.type
-      log.log('[ChatOverlay] Page type detected:', pageType)
+      pageContent = buildContextForPrompt(extracted, 2000)
+      log.log('[ChatOverlay] Page context extracted:', pageType, pageContent?.slice(0, 100))
     } catch (err) {
       log.warn('[ChatOverlay] Failed to extract page context:', err)
     }
@@ -344,6 +346,7 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
           selectedContext: selectedContextStr,
           searchContext: searchContextStr,
           pageType,
+          pageContent,
           screenshot: screenshotBase64,
         })
       } else {
@@ -355,6 +358,7 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
           selectedContext: selectedContextStr,
           searchContext: searchContextStr,
           pageType,
+          pageContent,
         })
       }
     } else {

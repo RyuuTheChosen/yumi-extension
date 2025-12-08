@@ -37,6 +37,9 @@ export interface PortStreamPayload {
   history?: Array<{ role: string; content: string }>
   memoryContext?: string  // Formatted memory context from content script
   pageType?: string       // Page type from context extraction
+  pageUrl?: string        // Current page URL for context awareness
+  pageTitle?: string      // Current page title for context awareness
+  pageContent?: string    // Extracted page content (mainContent, summary)
   selectedContext?: string // User-selected content from right-click context menu
   searchContext?: string  // Web search results context
   screenshot?: string     // Base64 screenshot for vision queries
@@ -64,7 +67,7 @@ export async function streamViaHub(
   startTime: number,
   hubConfig: HubConfig
 ): Promise<void> {
-  const { scopeId, content, requestId, history, memoryContext, pageType, selectedContext, searchContext, screenshot } = payload
+  const { scopeId, content, requestId, history, memoryContext, pageType, pageUrl, pageTitle, pageContent, selectedContext, searchContext, screenshot } = payload
   const { hubUrl, hubAccessToken, settingsStore } = hubConfig
 
   log.log(`[Streaming] Hub streaming for scope: ${scopeId}, requestId: ${requestId}`)
@@ -86,10 +89,15 @@ export async function streamViaHub(
     // Build messages array with system prompt
     const messages: Array<{ role: string; content: MessageContent }> = []
 
-    // Build pageInfo for the prompt
-    const pageInfo = (selectedContext || searchContext)
-      ? { pageType, selectedContext, searchContext }
-      : undefined
+    // Build pageInfo for the prompt - always include URL/title for context awareness
+    const pageInfo = {
+      pageType,
+      pageUrl,
+      pageTitle,
+      pageContent,
+      selectedContext,
+      searchContext,
+    }
 
     const enhancedSystemPrompt = buildChatSystemPrompt(
       activePersonality,

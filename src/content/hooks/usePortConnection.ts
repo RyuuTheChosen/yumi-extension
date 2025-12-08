@@ -228,6 +228,8 @@ export function usePortConnection(options: UsePortConnectionOptions = {}) {
   
   const sendMessage = useCallback((scopeId: string, content: string, context?: Record<string, any>) => {
     const requestId = crypto.randomUUID()
+    const pageUrl = context?.url || undefined
+    const pageTitle = context?.title || undefined
     const message = {
       type: 'SEND_MESSAGE',
       payload: {
@@ -240,6 +242,9 @@ export function usePortConnection(options: UsePortConnectionOptions = {}) {
         selectedContext: context?.selectedContext || undefined,  // Right-click context menu content
         pageContext: context?.pageContext || undefined,  // Extracted page content
         pageType: context?.pageType || undefined,  // Detected page type
+        pageUrl,  // Current page URL for context
+        pageTitle,  // Current page title for context
+        pageContent: context?.pageContent || undefined,  // Extracted page content
         screenshot: context?.screenshot || undefined,  // Vision query screenshot
         searchContext: context?.searchContext || undefined,  // Web search results
       }

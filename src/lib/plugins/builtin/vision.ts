@@ -8,9 +8,15 @@
 import type { Plugin, PromptContext, TriggerResult } from '../types'
 
 /**
- * Keywords that indicate user wants visual analysis
+ * Single-word triggers that need word-boundary matching
+ * Prevents false positives like "screensaver" matching "screen"
  */
-const VISION_TRIGGERS = [
+const WORD_TRIGGERS = ['screenshot', 'screen']
+
+/**
+ * Phrase triggers that use substring matching
+ */
+const PHRASE_TRIGGERS = [
   'look at this',
   'look at the',
   'look at my',
@@ -22,8 +28,6 @@ const VISION_TRIGGERS = [
   'see this',
   'see what',
   'look here',
-  'screenshot',
-  'screen',
   "what's on my screen",
   'what am i looking at',
   'what is this showing',
@@ -37,14 +41,58 @@ const VISION_TRIGGERS = [
   'the design',
   'the ui',
   'the interface',
+  'analyze this',
+  'analyze the',
+  'describe this',
+  'describe what',
+  'read this image',
+  'read the text',
+  "what's this",
+  'what does this show',
+  'examine this',
 ]
 
 /**
+ * Patterns that indicate non-visual intent (false positive filters)
+ * These are checked first to reject common phrases that shouldn't trigger vision
+ */
+const NEGATION_PATTERNS = [
+  /\bcan'?t see\b/i,
+  /\bdon'?t see\b/i,
+  /\bwon'?t see\b/i,
+  /\bsee what (you|i) mean\b/i,
+  /\bsee (the |your )?point\b/i,
+  /\bsee (you|ya)\b/i,
+  /\bscreensaver\b/i,
+]
+
+/**
+ * Check if word matches with word boundaries (not substring)
+ */
+function matchesWord(text: string, word: string): boolean {
+  return new RegExp(`\\b${word}\\b`, 'i').test(text)
+}
+
+/**
  * Check if the query requests visual/screenshot analysis
+ * Uses negation patterns to filter false positives, then checks triggers
  */
 function isVisionQuery(query: string): boolean {
   const lower = query.toLowerCase()
-  return VISION_TRIGGERS.some(trigger => lower.includes(trigger))
+
+  if (NEGATION_PATTERNS.some(p => p.test(lower))) {
+    return false
+  }
+
+  for (const word of WORD_TRIGGERS) {
+    if (matchesWord(lower, word)) return true
+  }
+
+  for (const phrase of PHRASE_TRIGGERS) {
+    if (lower.includes(phrase)) return true
+  }
+
+  return false
 }
 
 export const visionPlugin: Plugin = {

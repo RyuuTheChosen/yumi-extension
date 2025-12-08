@@ -20,6 +20,7 @@ export interface PageContextInfo {
   pageType?: string
   pageUrl?: string
   pageTitle?: string
+  pageContent?: string
   selectedContext?: string
   searchContext?: string
 }
@@ -129,6 +130,22 @@ export function buildChatSystemPrompt(
 
   if (pluginAdditions) {
     prompt += `\n\n## Active Capabilities\n${pluginAdditions}`
+  }
+
+  // Add current page context - critical for awareness
+  if (pageInfo?.pageUrl || pageInfo?.pageTitle || pageInfo?.pageContent) {
+    prompt += `\n\n## Current Page\n`
+    prompt += `The user is currently browsing:\n`
+    if (pageInfo.pageTitle) {
+      prompt += `- **Title**: ${pageInfo.pageTitle}\n`
+    }
+    if (pageInfo.pageUrl) {
+      prompt += `- **URL**: ${pageInfo.pageUrl}\n`
+    }
+    if (pageInfo.pageContent) {
+      prompt += `\n**Page Content:**\n${pageInfo.pageContent}\n`
+    }
+    prompt += `\nUse this context to answer questions about what they're viewing. You CAN see the page content above.\n`
   }
 
   // Add conversational context (the only dynamic part)
