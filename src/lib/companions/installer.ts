@@ -37,7 +37,7 @@ export type ProgressCallback = (progress: InstallProgress) => void
 // Configuration
 const MAX_PACKAGE_SIZE_MB = 50
 const MAX_PACKAGE_SIZE_BYTES = MAX_PACKAGE_SIZE_MB * 1024 * 1024
-const DOWNLOAD_TIMEOUT_MS = 60000 // 60 seconds
+const DOWNLOAD_TIMEOUT_MS = 180000 // 3 minutes for larger packages
 
 /**
  * Calculate SHA-256 checksum of an ArrayBuffer
