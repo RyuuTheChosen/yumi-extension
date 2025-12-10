@@ -45,7 +45,7 @@ function updateOverlayConfig(config: Parameters<typeof import('./overlayAvatar')
 	}
 	return false
 }
-import './visionAbilities' // Initialize vision abilities
+import { visionAbilities } from './visionAbilities'
 import './contextMenuHandler' // Initialize context menu handling
 
 // Expression state management
@@ -134,6 +134,9 @@ async function handleCompanionChange(newSlug: string) {
 		const plugins = await loadPluginsForCompanion(companion.personality.capabilities)
 		log.log(' Plugins reloaded for companion change:', plugins.map(p => p.manifest.id))
 
+		// Initialize vision abilities after plugins are loaded
+		visionAbilities.init()
+
 		const scale = typeof store?.state?.live2DScale === 'number' ? store.state.live2DScale : 0.5
 		const modelOffsetX = typeof store?.state?.modelOffsetX === 'number' ? store.state.modelOffsetX : 0
 		const modelOffsetY = typeof store?.state?.modelOffsetY === 'number' ? store.state.modelOffsetY : 0
@@ -200,6 +203,9 @@ async function maybeMountOverlay() {
 		// Initialize plugins based on companion capabilities
 		const plugins = await loadPluginsForCompanion(companion.personality.capabilities)
 		log.log(' Plugins loaded:', plugins.map(p => p.manifest.id))
+
+		// Initialize vision abilities after plugins are loaded
+		visionAbilities.init()
 
 		// Use companion's model URL (either blob URL from IndexedDB or extension URL for bundled)
 		const resolvedUrl = companion.modelUrl
@@ -315,6 +321,9 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
 				// Initialize plugins for the companion
 				const plugins = await loadPluginsForCompanion(companion.personality.capabilities)
 				log.log(' Plugins loaded on login:', plugins.map(p => p.manifest.id))
+
+				// Initialize vision abilities after plugins are loaded
+				visionAbilities.init()
 
 				if (newState?.enableLive2D) {
 					const scale = typeof newState?.live2DScale === 'number' ? newState.live2DScale : 0.5

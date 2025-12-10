@@ -12,6 +12,7 @@ import { StreamingTTSService, extractCompleteSentences } from '../../lib/tts/str
 import { bus } from '../../lib/core/bus'
 import { getActiveCompanion } from '../../lib/companions/loader'
 import { useSettingsStore } from '../../lib/stores/settings.store'
+import { isPluginActive } from '../../lib/plugins/loader'
 
 const log = createLogger('useTTS')
 
@@ -62,8 +63,8 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
    * Initialize non-streaming TTS service with Hub credentials and companion voice
    */
   useEffect(() => {
-    if (!enabled) {
-      log.log('[useTTS] TTS disabled')
+    if (!enabled || !isPluginActive('tts')) {
+      log.log('[useTTS] TTS disabled or plugin inactive')
       return
     }
 

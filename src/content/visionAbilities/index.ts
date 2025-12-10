@@ -4,6 +4,7 @@ import { injectVisionStyles } from './utils'
 import { mergeVisionConfig } from '../../lib/types/visionConfig'
 import type { VisionConfig } from '../../lib/types/visionConfig'
 import { createLogger } from '../../lib/core/debug'
+import { isPluginActive } from '../../lib/plugins/loader'
 
 const log = createLogger('VisionAbilities')
 
@@ -13,6 +14,11 @@ class VisionAbilitiesManager {
   private imageUnderstanding: ImageUnderstanding | null = null
 
   async init() {
+    if (!isPluginActive('vision')) {
+      log.log('Vision plugin inactive, skipping init')
+      return
+    }
+
     await this.loadConfig()
     injectVisionStyles()
 
@@ -45,10 +51,3 @@ class VisionAbilitiesManager {
 }
 
 export const visionAbilities = new VisionAbilitiesManager()
-
-// Auto-init
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => visionAbilities.init())
-} else {
-  visionAbilities.init()
-}

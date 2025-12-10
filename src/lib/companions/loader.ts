@@ -121,6 +121,23 @@ export async function getActiveCompanion(activeSlug?: string): Promise<LoadedCom
     /** Only fall back to bundled for 'yumi' slug */
     log.log(`No installed companion found, using bundled: ${slug}`)
     loadedCompanion = await loadBundledCompanion(BUNDLED_COMPANION_ID)
+
+    /** Try to get Hub personality for capabilities (plugins, etc.) */
+    const credentials = await getHubCredentials()
+    if (credentials) {
+      const hubPersonality = await fetchHubPersonality(
+        slug,
+        credentials.hubUrl,
+        credentials.accessToken
+      )
+      if (hubPersonality) {
+        log.log(`Using Hub personality for bundled companion`)
+        loadedCompanion = {
+          ...loadedCompanion,
+          personality: hubPersonality,
+        }
+      }
+    }
   } else {
     /** Non-yumi companion not found - fall back to bundled yumi */
     log.warn(`Installed companion ${slug} not found, falling back to bundled yumi`)
@@ -301,6 +318,31 @@ async function getHubCredentials(): Promise<{ hubUrl: string; accessToken: strin
     if (!hubUrl || !accessToken) return null
     return { hubUrl, accessToken }
   } catch {
+    return null
+  }
+}
+
+/**
+ * Fetch personality from Hub API for a companion
+ * Used to get updated capabilities for bundled companions
+ */
+async function fetchHubPersonality(
+  slug: string,
+  hubUrl: string,
+  accessToken: string
+): Promise<CompanionPersonality | null> {
+  try {
+    const response = await fetch(`${hubUrl}/v1/companions/${slug}`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` },
+    })
+    if (!response.ok) return null
+    const data = await response.json()
+    if (data.personality) {
+      return companionPersonalitySchema.parse(data.personality)
+    }
+    return null
+  } catch (err) {
+    log.error(`fetchHubPersonality failed:`, err)
     return null
   }
 }

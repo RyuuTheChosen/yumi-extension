@@ -280,7 +280,7 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
     const wantsVision = trigger?.pluginId === 'vision' && trigger?.data?.needsScreenshot
     let screenshotBase64: string | null = null
 
-    if (wantsVision) {
+    if (wantsVision && isPluginActive('vision')) {
       log.log('[ChatOverlay] Vision query detected via plugin, capturing screenshot...')
       try {
         const response = await new Promise<{ success: boolean; screenshot?: string; error?: string }>((resolve) => {

@@ -16,6 +16,7 @@ import {
   useMemoryStore,
 } from '../../lib/memory'
 import type { Message } from '../../types'
+import { isPluginActive } from '../../lib/plugins/loader'
 
 const log = createLogger('useMemoryExtraction')
 
@@ -54,6 +55,10 @@ export function useMemoryExtraction(options: UseMemoryExtractionOptions): void {
   const setLastExtractionAt = useMemoryStore(s => s.setLastExtractionAt)
 
   useEffect(() => {
+    if (!isPluginActive('memory')) {
+      return
+    }
+
     const wasStreaming = prevStatusRef.current === 'streaming'
     const wasIdle = prevStatusRef.current === 'idle'
     prevStatusRef.current = status
