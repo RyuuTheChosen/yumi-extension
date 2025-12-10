@@ -2,10 +2,17 @@ import { extractMainContent } from './extract'
 import { bus } from '../lib/core/bus'
 import { createLogger } from '../lib/core/debug'
 import { detectPageType } from '../lib/memory'
-import { getActiveCompanion } from '../lib/companions/loader'
-import { ttsService } from '../lib/tts'
+import { getActiveCompanion, checkAndSyncActiveCompanion } from '../lib/companions/loader'
+import { registerBuiltinPlugins, loadPluginsForCompanion } from '../lib/plugins'
 
 const log = createLogger('Content')
+
+/**
+ * Register all builtin plugins in the content script context.
+ * This must happen before any companion loads to ensure plugins are available.
+ */
+registerBuiltinPlugins()
+log.log('Builtin plugins registered')
 
 // Lazy-loaded avatar module (300KB+ bundle only loaded when needed)
 let overlayModule: typeof import('./overlayAvatar') | null = null
@@ -122,6 +129,11 @@ async function handleCompanionChange(newSlug: string) {
 
 		// Load and mount the new companion
 		const companion = await getActiveCompanion(newSlug)
+
+		// Reload plugins for the new companion
+		const plugins = await loadPluginsForCompanion(companion.personality.capabilities)
+		log.log(' Plugins reloaded for companion change:', plugins.map(p => p.manifest.id))
+
 		const scale = typeof store?.state?.live2DScale === 'number' ? store.state.live2DScale : 0.5
 		const modelOffsetX = typeof store?.state?.modelOffsetX === 'number' ? store.state.modelOffsetX : 0
 		const modelOffsetY = typeof store?.state?.modelOffsetY === 'number' ? store.state.modelOffsetY : 0
@@ -171,25 +183,7 @@ async function maybeMountOverlay() {
 			return
 		}
 
-		// Initialize ttsService with Hub credentials (for proactive TTS when chat is closed)
-		const hubUrl = store?.state?.hubUrl || 'https://historic-tessy-yumi-labs-d3fc2b1c.koyeb.app'
-		const ttsEnabled = store?.state?.ttsEnabled !== false
-		const ttsVolume = typeof store?.state?.ttsVolume === 'number' ? store.state.ttsVolume : 1.0
 		const activeSlug = store?.state?.activeCompanionSlug || 'yumi'
-
-		try {
-			const companion = await getActiveCompanion(activeSlug)
-			const voiceId = companion.personality.voice?.voiceId || 'MEJe6hPrI48Kt2lFuVe3'
-			ttsService.initialize(hubUrl, hubAccessToken, {
-				enabled: ttsEnabled,
-				voice: voiceId,
-				volume: ttsVolume,
-			})
-			log.log(' TTS service initialized with voice:', voiceId)
-		} catch (e) {
-			log.warn(' Failed to initialize TTS service:', e)
-		}
-
 		const enableOverlay = !!store?.state?.enableLive2D
 		log.log(' Enable overlay:', enableOverlay)
 		if (!enableOverlay) {
@@ -202,6 +196,10 @@ async function maybeMountOverlay() {
 		// Load companion (installed from IndexedDB or bundled fallback)
 		const companion = await getActiveCompanion(activeSlug)
 		log.log(' Loaded companion:', companion.manifest.id)
+
+		// Initialize plugins based on companion capabilities
+		const plugins = await loadPluginsForCompanion(companion.personality.capabilities)
+		log.log(' Plugins loaded:', plugins.map(p => p.manifest.id))
 
 		// Use companion's model URL (either blob URL from IndexedDB or extension URL for bundled)
 		const resolvedUrl = companion.modelUrl
@@ -217,6 +215,35 @@ async function maybeMountOverlay() {
 }
 
 maybeMountOverlay()
+
+/** Background sync check for companion updates from Hub */
+async function runBackgroundSync() {
+	try {
+		const data = await chrome.storage.local.get('settings-store')
+		let store
+		if (typeof data?.['settings-store'] === 'string') {
+			store = JSON.parse(data['settings-store'])
+		} else {
+			store = data?.['settings-store']
+		}
+
+		const activeSlug = store?.state?.activeCompanionSlug
+		if (!activeSlug || activeSlug === 'yumi') return
+
+		log.log(' Running background companion sync check...')
+		const result = await checkAndSyncActiveCompanion(activeSlug)
+
+		if (result.synced && result.newCapabilities) {
+			log.log(' Companion updated with new capabilities, reloading plugins')
+			await loadPluginsForCompanion(result.newCapabilities)
+		}
+	} catch (e) {
+		log.warn(' Background sync check failed:', e)
+	}
+}
+
+/** Run sync check after a delay to avoid blocking initial page load */
+setTimeout(runBackgroundSync, 5000)
 
 // Emit page:ready for proactive system (after a brief delay for page to settle)
 setTimeout(() => {
@@ -278,25 +305,17 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
 			unmountOverlay()
 			return
 		} else if (isLoggedIn && !wasLoggedIn) {
-			// User logged in - initialize TTS and mount overlay if enabled
-			log.log(' User logged in, initializing TTS and checking overlay')
+			// User logged in - load companion, plugins, and mount overlay if enabled
+			log.log(' User logged in, loading companion and plugins')
 
-			// Initialize ttsService with Hub credentials
-			const hubUrl = newState?.hubUrl || 'https://historic-tessy-yumi-labs-d3fc2b1c.koyeb.app'
-			const hubAccessToken = newState?.hubAccessToken
-			const ttsEnabled = newState?.ttsEnabled !== false
-			const ttsVolume = typeof newState?.ttsVolume === 'number' ? newState.ttsVolume : 1.0
 			const activeSlug = newState?.activeCompanionSlug || 'yumi'
 
 			try {
 				const companion = await getActiveCompanion(activeSlug)
-				const voiceId = companion.personality.voice?.voiceId || 'MEJe6hPrI48Kt2lFuVe3'
-				ttsService.initialize(hubUrl, hubAccessToken, {
-					enabled: ttsEnabled,
-					voice: voiceId,
-					volume: ttsVolume,
-				})
-				log.log(' TTS service initialized on login with voice:', voiceId)
+
+				// Initialize plugins for the companion
+				const plugins = await loadPluginsForCompanion(companion.personality.capabilities)
+				log.log(' Plugins loaded on login:', plugins.map(p => p.manifest.id))
 
 				if (newState?.enableLive2D) {
 					const scale = typeof newState?.live2DScale === 'number' ? newState.live2DScale : 0.5
@@ -316,31 +335,6 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
 	if (!isLoggedIn) {
 		log.log(' Not logged in, ignoring settings changes')
 		return
-	}
-
-	// Check if TTS-related settings changed
-	const ttsSettingsChanged =
-		oldState?.ttsEnabled !== newState?.ttsEnabled ||
-		oldState?.ttsVolume !== newState?.ttsVolume ||
-		oldState?.activeCompanionSlug !== newState?.activeCompanionSlug
-
-	if (ttsSettingsChanged) {
-		const ttsEnabled = newState?.ttsEnabled !== false
-		const ttsVolume = typeof newState?.ttsVolume === 'number' ? newState.ttsVolume : 1.0
-		const activeSlug = newState?.activeCompanionSlug || 'yumi'
-
-		try {
-			const companion = await getActiveCompanion(activeSlug)
-			const voiceId = companion.personality.voice?.voiceId || 'MEJe6hPrI48Kt2lFuVe3'
-			ttsService.updateSettings({
-				enabled: ttsEnabled,
-				voice: voiceId,
-				volume: ttsVolume,
-			})
-			log.log(' TTS settings updated:', { enabled: ttsEnabled, volume: ttsVolume, voice: voiceId })
-		} catch (e) {
-			log.warn(' Failed to update TTS settings:', e)
-		}
 	}
 
 	// Check if avatar-related fields actually changed (avoid remount on AI model changes)

@@ -7,10 +7,11 @@
 
 import { useEffect, useRef } from 'react'
 import { createLogger } from '../../lib/core/debug'
-import { ttsService, ttsCoordinator } from '../../lib/tts'
+import { ttsService, ttsCoordinator, refreshAccessToken } from '../../lib/tts'
 import { StreamingTTSService, extractCompleteSentences } from '../../lib/tts/streamingTts'
 import { bus } from '../../lib/core/bus'
 import { getActiveCompanion } from '../../lib/companions/loader'
+import { useSettingsStore } from '../../lib/stores/settings.store'
 
 const log = createLogger('useTTS')
 
@@ -204,12 +205,15 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
         const companion = await getActiveCompanion(activeCompanionSlug)
         currentVoiceId = companion.personality.voice?.voiceId || 'MEJe6hPrI48Kt2lFuVe3'
       } catch {
-        // Use default
+        /** Use default */
       }
 
       ttsCoordinator.stopAll()
 
-      streamingTtsRef.current = new StreamingTTSService(hubUrl, hubAccessToken, {
+      /** Get current token from store (may be fresher than hook prop) */
+      let currentToken = useSettingsStore.getState().hubAccessToken || hubAccessToken
+
+      streamingTtsRef.current = new StreamingTTSService(hubUrl, currentToken, {
         enabled: true,
         voice: currentVoiceId,
         volume,
@@ -217,7 +221,24 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
       })
 
       log.log('[useTTS] Connecting to streaming TTS...')
-      const connected = await streamingTtsRef.current.connect()
+      let connected = await streamingTtsRef.current.connect()
+
+      /** If connection failed, try refreshing token and retry once */
+      if (!connected) {
+        log.log('[useTTS] Connection failed, attempting token refresh...')
+        const newToken = await refreshAccessToken()
+        if (newToken) {
+          streamingTtsRef.current.destroy()
+          streamingTtsRef.current = new StreamingTTSService(hubUrl, newToken, {
+            enabled: true,
+            voice: currentVoiceId,
+            volume,
+            speed: 1.0,
+          })
+          connected = await streamingTtsRef.current.connect()
+        }
+      }
+
       if (!connected) {
         log.warn('[useTTS] Streaming TTS connection failed, will fall back to non-streaming')
         streamingTtsFailedRef.current = true

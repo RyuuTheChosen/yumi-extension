@@ -6,6 +6,6 @@
  */
 
 export * from './types'
-export { ttsService, TTSService } from './ttsService'
+export { ttsService, TTSService, refreshAccessToken } from './ttsService'
 export { StreamingTTSService, extractCompleteSentences } from './streamingTts'
 export { ttsCoordinator } from './ttsCoordinator'

@@ -65,6 +65,7 @@ export class StreamingTTSService {
   private gainNode: GainNode | null = null
   private streamDone = false
   private audioChunksReceived = 0
+  private closeRequested = false
 
   constructor(
     private hubUrl: string,
@@ -118,6 +119,7 @@ export class StreamingTTSService {
 
     this.setState('connecting')
     this.streamDone = false
+    this.closeRequested = false
 
     // Initialize audio context
     if (!this.audioContext) {
@@ -146,7 +148,17 @@ export class StreamingTTSService {
       this.ws.onopen = () => {
         log.log('WebSocket connected')
 
-        // Send init message
+        /** If close was requested while connecting, close immediately */
+        if (this.closeRequested) {
+          log.log('Close was requested during connection, closing WebSocket')
+          this.ws?.close()
+          this.ws = null
+          this.setState('disconnected')
+          resolve(false)
+          return
+        }
+
+        /** Send init message */
         const initMsg: StreamingTTSOutMessage = {
           type: 'init',
           voiceId: this.settings.voice,
@@ -332,6 +344,13 @@ export class StreamingTTSService {
    */
   close(): void {
     if (this.ws) {
+      /** If still connecting, set flag to close once open (avoids "closed before established" error) */
+      if (this.ws.readyState === WebSocket.CONNECTING) {
+        log.log('WebSocket still connecting, setting closeRequested flag')
+        this.closeRequested = true
+        return
+      }
+
       if (this.ws.readyState === WebSocket.OPEN) {
         const closeMsg: StreamingTTSOutMessage = { type: 'close' }
         this.ws.send(JSON.stringify(closeMsg))
@@ -360,9 +379,14 @@ export class StreamingTTSService {
    * Stop all playback immediately and cleanup all resources.
    */
   destroy(): void {
-    // Close WebSocket without waiting for audio
+    /** Close WebSocket without waiting for audio */
     if (this.ws) {
-      this.ws.close()
+      /** If still connecting, set flag and let onopen handler close it */
+      if (this.ws.readyState === WebSocket.CONNECTING) {
+        this.closeRequested = true
+      } else {
+        this.ws.close()
+      }
       this.ws = null
     }
 

@@ -8,8 +8,51 @@ import type { TTSSettings, TTSEvent, TTSPlaybackState } from './types'
 import { DEFAULT_TTS_SETTINGS } from './types'
 import { createLogger } from '../core/debug'
 import { ttsCoordinator } from './ttsCoordinator'
+import { useSettingsStore } from '../stores/settings.store'
 
 const log = createLogger('TTS')
+
+/**
+ * Refresh the access token using the stored refresh token.
+ * Updates the settings store with new tokens.
+ * Returns the new access token or null if refresh failed.
+ */
+export async function refreshAccessToken(): Promise<string | null> {
+  const { hubUrl, hubRefreshToken, setHubAuth, hubUser, hubQuota, clearHubAuth } = useSettingsStore.getState()
+
+  if (!hubRefreshToken) {
+    log.warn('No refresh token available')
+    return null
+  }
+
+  try {
+    const response = await fetch(`${hubUrl}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken: hubRefreshToken }),
+    })
+
+    if (!response.ok) {
+      log.error('Token refresh failed:', response.status)
+      if (response.status === 401) {
+        clearHubAuth()
+      }
+      return null
+    }
+
+    const data = await response.json()
+
+    if (hubUser && hubQuota) {
+      setHubAuth(data.accessToken, data.refreshToken, hubUser, hubQuota)
+    }
+
+    log.log('Token refreshed successfully')
+    return data.accessToken
+  } catch (err) {
+    log.error('Token refresh error:', err)
+    return null
+  }
+}
 
 type TTSEventCallback = (event: TTSEvent) => void
 
@@ -95,7 +138,7 @@ class TTSService {
     try {
       this.abortController = new AbortController()
 
-      const response = await fetch(`${this.hubUrl}/v1/tts/stream`, {
+      let response = await fetch(`${this.hubUrl}/v1/tts/stream`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -109,12 +152,34 @@ class TTSService {
         signal: this.abortController.signal,
       })
 
+      /** If 401, try refreshing token and retry once */
+      if (response.status === 401) {
+        log.log('Token expired, attempting refresh...')
+        const newToken = await refreshAccessToken()
+        if (newToken) {
+          this.hubAccessToken = newToken
+          response = await fetch(`${this.hubUrl}/v1/tts/stream`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${newToken}`,
+            },
+            body: JSON.stringify({
+              text,
+              voiceId: this.settings.voice,
+              speed: this.settings.speed,
+            }),
+            signal: this.abortController.signal,
+          })
+        }
+      }
+
       if (!response.ok) {
         const error = await response.json().catch(() => ({ error: 'TTS request failed' }))
         throw new Error(error.error || `TTS failed: ${response.status}`)
       }
 
-      // Get audio as blob
+      /** Get audio as blob */
       const audioBlob = await response.blob()
       await this.playAudioBlob(audioBlob, text)
     } catch (err) {
