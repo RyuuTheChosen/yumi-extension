@@ -98,13 +98,13 @@ export async function loadInstalledCompanion(slug: string): Promise<LoadedCompan
 
 /**
  * Get the currently active companion
- * Checks IndexedDB for installed companion first, then falls back to bundled
+ * Always tries IndexedDB first (for Hub-synced plugins), then falls back to bundled
  * Cleans up blob URLs from previous companion when switching
  */
 export async function getActiveCompanion(activeSlug?: string): Promise<LoadedCompanion> {
   const slug = activeSlug || BUNDLED_COMPANION_ID
 
-  // Clean up blob URLs from previous companion if switching
+  /** Clean up blob URLs from previous companion if switching */
   if (currentCompanionSlug && currentCompanionSlug !== slug) {
     log.log(`Switching from ${currentCompanionSlug} to ${slug}, cleaning up blob URLs`)
     revokeCompanionBlobUrls(currentCompanionSlug)
@@ -112,22 +112,22 @@ export async function getActiveCompanion(activeSlug?: string): Promise<LoadedCom
 
   let loadedCompanion: LoadedCompanion
 
-  // First, try to load from IndexedDB if it's not the bundled companion
-  if (slug !== BUNDLED_COMPANION_ID) {
-    const installed = await loadInstalledCompanion(slug)
-    if (installed) {
-      log.log(`Loaded installed companion: ${slug}`)
-      loadedCompanion = installed
-    } else {
-      log.warn(`Installed companion ${slug} not found, falling back to bundled`)
-      loadedCompanion = await loadBundledCompanion(BUNDLED_COMPANION_ID)
-    }
+  /** Always try to load from IndexedDB first (even for 'yumi' slug) */
+  const installed = await loadInstalledCompanion(slug)
+  if (installed) {
+    log.log(`Loaded installed companion: ${slug}`)
+    loadedCompanion = installed
+  } else if (slug === BUNDLED_COMPANION_ID) {
+    /** Only fall back to bundled for 'yumi' slug */
+    log.log(`No installed companion found, using bundled: ${slug}`)
+    loadedCompanion = await loadBundledCompanion(BUNDLED_COMPANION_ID)
   } else {
-    // Fall back to bundled companion
+    /** Non-yumi companion not found - fall back to bundled yumi */
+    log.warn(`Installed companion ${slug} not found, falling back to bundled yumi`)
     loadedCompanion = await loadBundledCompanion(BUNDLED_COMPANION_ID)
   }
 
-  // Track the new companion slug
+  /** Track the new companion slug */
   currentCompanionSlug = loadedCompanion.manifest.id
 
   return loadedCompanion
@@ -195,11 +195,6 @@ export async function syncCompanionFromHub(
   accessToken: string,
   force: boolean = false
 ): Promise<CompanionSyncResult> {
-  /** Skip bundled companions - they don't sync from Hub */
-  if (slug === BUNDLED_COMPANION_ID) {
-    return { synced: false, personalityChanged: false }
-  }
-
   /** Check if we should sync (throttle) */
   if (!force && !shouldCheckSync(slug)) {
     log.log(`Skipping sync check for ${slug} - checked recently`)
@@ -319,9 +314,6 @@ export async function checkAndSyncActiveCompanion(
   force: boolean = false
 ): Promise<CompanionSyncResult> {
   const slug = activeSlug || BUNDLED_COMPANION_ID
-  if (slug === BUNDLED_COMPANION_ID) {
-    return { synced: false, personalityChanged: false }
-  }
 
   const credentials = await getHubCredentials()
   if (!credentials) {

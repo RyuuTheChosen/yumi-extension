@@ -227,10 +227,9 @@ async function runBackgroundSync() {
 			store = data?.['settings-store']
 		}
 
-		const activeSlug = store?.state?.activeCompanionSlug
-		if (!activeSlug || activeSlug === 'yumi') return
+		const activeSlug = store?.state?.activeCompanionSlug || 'yumi'
 
-		log.log(' Running background companion sync check...')
+		log.log(' Running background companion sync check for:', activeSlug)
 		const result = await checkAndSyncActiveCompanion(activeSlug)
 
 		if (result.synced && result.newCapabilities) {
