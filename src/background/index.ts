@@ -22,6 +22,12 @@ import {
   deleteMemory,
   clearAllMemories
 } from '../lib/memory/db'
+import {
+  initCompanionDB,
+  getCompanionMetadata,
+  getCompanionFileAsDataUrl,
+  markCompanionUsed,
+} from '../lib/companions/db'
 import type { RuntimeMessage } from '../types'
 
 const log = createLogger('Background')
@@ -47,9 +53,10 @@ chrome.runtime.onInstalled.addListener(() => {
 })
 
 /**
- * Initialize memory database on service worker startup
+ * Initialize databases on service worker startup
  */
 initMemoryDB().catch(err => log.error('Failed to init memory DB:', err))
+initCompanionDB().catch(err => log.error('Failed to init companion DB:', err))
 
 /**
  * Setup context menu click handlers
@@ -268,6 +275,57 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     (async () => {
       const response = await handleSearchRequest(msg.payload)
       sendResponse(response)
+    })()
+    return true
+  }
+
+  /**
+   * COMPANION_GET_METADATA - Get companion metadata from IndexedDB
+   */
+  if (msg.type === 'COMPANION_GET_METADATA') {
+    (async () => {
+      try {
+        const { slug } = msg.payload || {}
+        const metadata = await getCompanionMetadata(slug)
+        sendResponse({ success: true, metadata })
+      } catch (err) {
+        log.error('Failed to get companion metadata:', err)
+        sendResponse({ success: false, error: getErrorMessage(err) })
+      }
+    })()
+    return true
+  }
+
+  /**
+   * COMPANION_GET_FILE_URL - Get data URL for companion file (for cross-context use)
+   */
+  if (msg.type === 'COMPANION_GET_FILE_URL') {
+    (async () => {
+      try {
+        const { slug, filePath } = msg.payload || {}
+        const url = await getCompanionFileAsDataUrl(slug, filePath)
+        sendResponse({ success: true, url })
+      } catch (err) {
+        log.error('Failed to get companion file URL:', err)
+        sendResponse({ success: false, error: getErrorMessage(err) })
+      }
+    })()
+    return true
+  }
+
+  /**
+   * COMPANION_MARK_USED - Update companion's lastUsedAt timestamp
+   */
+  if (msg.type === 'COMPANION_MARK_USED') {
+    (async () => {
+      try {
+        const { slug } = msg.payload || {}
+        await markCompanionUsed(slug)
+        sendResponse({ success: true })
+      } catch (err) {
+        log.error('Failed to mark companion used:', err)
+        sendResponse({ success: false, error: getErrorMessage(err) })
+      }
     })()
     return true
   }

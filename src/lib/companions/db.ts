@@ -279,12 +279,31 @@ export async function getCompanionFileUrl(
 
   const blobUrl = URL.createObjectURL(file.blob)
 
-  // Track the blob URL for cleanup
+  /** Track the blob URL for cleanup */
   const existing = blobUrlCache.get(companionSlug) || []
   existing.push(blobUrl)
   blobUrlCache.set(companionSlug, existing)
 
   return blobUrl
+}
+
+/**
+ * Get a companion file as a data URL (base64)
+ * Used for cross-context communication where blob URLs don't work
+ */
+export async function getCompanionFileAsDataUrl(
+  companionSlug: string,
+  filePath: string
+): Promise<string | null> {
+  const file = await getCompanionFile(companionSlug, filePath)
+  if (!file) return null
+
+  return new Promise((resolve) => {
+    const reader = new FileReader()
+    reader.onloadend = () => resolve(reader.result as string)
+    reader.onerror = () => resolve(null)
+    reader.readAsDataURL(file.blob)
+  })
 }
 
 /**

@@ -6,9 +6,9 @@ import {
   type LoadedCompanion,
 } from './types'
 import {
-  getCompanionMetadata,
-  getCompanionFileUrl,
-  markCompanionUsed,
+  getCompanionMetadata as getCompanionMetadataDirect,
+  getCompanionFileUrl as getCompanionFileUrlDirect,
+  markCompanionUsed as markCompanionUsedDirect,
   revokeCompanionBlobUrls,
   saveCompanionMetadata,
   type StoredCompanion,
@@ -17,6 +17,74 @@ import { createLogger } from '../core/debug'
 import { refreshAccessToken } from '../tts/ttsService'
 
 const log = createLogger('CompanionLoader')
+
+/**
+ * Check if we're running in a content script context
+ * Content scripts need to use message passing to access IndexedDB
+ */
+function isContentScript(): boolean {
+  return typeof window !== 'undefined' && window.location.protocol !== 'chrome-extension:'
+}
+
+/**
+ * Get companion metadata - uses message passing for content scripts
+ */
+async function getCompanionMetadata(slug: string): Promise<StoredCompanion | null> {
+  if (!isContentScript()) {
+    return getCompanionMetadataDirect(slug)
+  }
+
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(
+      { type: 'COMPANION_GET_METADATA', payload: { slug } },
+      (response) => {
+        if (response?.success) {
+          resolve(response.metadata)
+        } else {
+          resolve(null)
+        }
+      }
+    )
+  })
+}
+
+/**
+ * Get companion file URL - uses message passing for content scripts
+ */
+async function getCompanionFileUrl(slug: string, filePath: string): Promise<string | null> {
+  if (!isContentScript()) {
+    return getCompanionFileUrlDirect(slug, filePath)
+  }
+
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(
+      { type: 'COMPANION_GET_FILE_URL', payload: { slug, filePath } },
+      (response) => {
+        if (response?.success) {
+          resolve(response.url)
+        } else {
+          resolve(null)
+        }
+      }
+    )
+  })
+}
+
+/**
+ * Mark companion as used - uses message passing for content scripts
+ */
+async function markCompanionUsed(slug: string): Promise<void> {
+  if (!isContentScript()) {
+    return markCompanionUsedDirect(slug)
+  }
+
+  return new Promise((resolve) => {
+    chrome.runtime.sendMessage(
+      { type: 'COMPANION_MARK_USED', payload: { slug } },
+      () => resolve()
+    )
+  })
+}
 
 /** Sync check interval in milliseconds (5 minutes) */
 const SYNC_CHECK_INTERVAL_MS = 5 * 60 * 1000
@@ -29,6 +97,145 @@ const BUNDLED_COMPANION_ID = 'yumi'
 
 // Track the currently loaded companion slug for cleanup
 let currentCompanionSlug: string | null = null
+
+// Content script blob URL tracking (separate from db.ts which only works in extension context)
+const contentScriptBlobUrls: Map<string, string[]> = new Map()
+
+/**
+ * Track blob URLs created in content script for cleanup
+ */
+function trackBlobUrls(slug: string, urls: string[]) {
+  if (urls.length === 0) return
+  const existing = contentScriptBlobUrls.get(slug) || []
+  contentScriptBlobUrls.set(slug, [...existing, ...urls])
+}
+
+/**
+ * Revoke blob URLs created in content script context
+ */
+export function revokeContentScriptBlobUrls(slug: string): number {
+  const urls = contentScriptBlobUrls.get(slug)
+  if (!urls || urls.length === 0) return 0
+
+  for (const url of urls) {
+    URL.revokeObjectURL(url)
+  }
+  const count = urls.length
+  contentScriptBlobUrls.delete(slug)
+  log.log(`Revoked ${count} content script blob URLs for ${slug}`)
+  return count
+}
+
+/**
+ * Get the base directory of the model entry path
+ * Example: 'model/model.model3.json' → 'model/'
+ */
+function getModelBaseDir(modelEntry: string): string {
+  const lastSlash = modelEntry.lastIndexOf('/')
+  return lastSlash > 0 ? modelEntry.substring(0, lastSlash + 1) : ''
+}
+
+/**
+ * Extract all file paths referenced in a model.json
+ * Returns relative paths as they appear in FileReferences
+ */
+function extractModelFilePaths(modelJson: any): string[] {
+  const paths: string[] = []
+
+  if (modelJson.FileReferences) {
+    const refs = modelJson.FileReferences
+    if (refs.Moc) paths.push(refs.Moc)
+    if (refs.Physics) paths.push(refs.Physics)
+    if (refs.Pose) paths.push(refs.Pose)
+    if (refs.DisplayInfo) paths.push(refs.DisplayInfo)
+    if (refs.Textures) paths.push(...refs.Textures)
+
+    // Expressions
+    if (refs.Expressions) {
+      for (const expr of refs.Expressions) {
+        if (expr.File) paths.push(expr.File)
+      }
+    }
+
+    // Motions (optional - not all models have motions)
+    if (refs.Motions) {
+      for (const group of Object.values(refs.Motions)) {
+        for (const motion of group as any[]) {
+          if (motion.File) paths.push(motion.File)
+          if (motion.Sound) paths.push(motion.Sound)
+        }
+      }
+    }
+  }
+
+  return paths.filter(Boolean)
+}
+
+/**
+ * Convert a URL to a blob URL if needed
+ * - blob: URLs are returned as-is
+ * - data: URLs are converted to blob URLs
+ */
+function ensureBlobUrl(url: string): string {
+  // If already a blob URL, return as-is
+  if (url.startsWith('blob:')) {
+    return url
+  }
+
+  // Convert data URL to blob URL
+  if (url.startsWith('data:')) {
+    const [header, base64] = url.split(',')
+    const mimeMatch = header.match(/data:([^;]+)/)
+    const mimeType = mimeMatch ? mimeMatch[1] : 'application/octet-stream'
+
+    const binary = atob(base64)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i)
+    }
+
+    const blob = new Blob([bytes], { type: mimeType })
+    return URL.createObjectURL(blob)
+  }
+
+  // Unknown format, return as-is (shouldn't happen)
+  return url
+}
+
+/**
+ * Rewrite model.json paths to use blob URLs
+ */
+function rewriteModelPaths(modelJson: any, blobUrlMap: Map<string, string>): any {
+  const rewritten = JSON.parse(JSON.stringify(modelJson))
+  const refs = rewritten.FileReferences
+  if (!refs) return rewritten
+
+  if (refs.Moc && blobUrlMap.has(refs.Moc)) refs.Moc = blobUrlMap.get(refs.Moc)
+  if (refs.Physics && blobUrlMap.has(refs.Physics)) refs.Physics = blobUrlMap.get(refs.Physics)
+  if (refs.Pose && blobUrlMap.has(refs.Pose)) refs.Pose = blobUrlMap.get(refs.Pose)
+  if (refs.DisplayInfo && blobUrlMap.has(refs.DisplayInfo)) refs.DisplayInfo = blobUrlMap.get(refs.DisplayInfo)
+
+  if (refs.Textures) {
+    refs.Textures = refs.Textures.map((t: string) => blobUrlMap.get(t) || t)
+  }
+
+  if (refs.Expressions) {
+    for (const expr of refs.Expressions) {
+      if (expr.File && blobUrlMap.has(expr.File)) expr.File = blobUrlMap.get(expr.File)
+    }
+  }
+
+  if (refs.Motions) {
+    for (const group of Object.values(refs.Motions)) {
+      for (const motion of group as any[]) {
+        if (motion.File && blobUrlMap.has(motion.File)) motion.File = blobUrlMap.get(motion.File)
+        if (motion.Sound && blobUrlMap.has(motion.Sound)) motion.Sound = blobUrlMap.get(motion.Sound)
+      }
+    }
+  }
+
+  return rewritten
+}
 
 /**
  * Load a bundled companion from the extension's public/companions/ folder
@@ -63,32 +270,100 @@ export async function loadBundledCompanion(companionId: string = BUNDLED_COMPANI
 
 /**
  * Load an installed companion from IndexedDB
+ * Pre-processes model files to convert data URLs to blob URLs for Live2D compatibility
  * Returns null if the companion is not installed or files are missing
  */
 export async function loadInstalledCompanion(slug: string): Promise<LoadedCompanion | null> {
   try {
+    log.log(`Loading installed companion: ${slug}`)
     const stored = await getCompanionMetadata(slug)
-    if (!stored) return null
-
-    // Get URLs for model files - these are blob URLs created from IndexedDB
-    const modelEntry = stored.manifest.model.entry
-    const modelUrl = await getCompanionFileUrl(slug, modelEntry)
-    const previewUrl = await getCompanionFileUrl(slug, stored.manifest.preview)
-
-    if (!modelUrl) {
-      log.warn(`Missing model file for installed companion: ${slug}`)
+    if (!stored) {
+      log.log(`No metadata found for companion: ${slug}`)
       return null
     }
 
-    // Mark as used
+    log.log(`Found metadata for companion: ${slug}, version: ${stored.version}`)
+
+    const modelEntry = stored.manifest.model.entry
+    const modelBaseDir = getModelBaseDir(modelEntry)
+
+    // Fetch model.json (returns blob URL in extension context, data URL in content script)
+    const modelFileUrl = await getCompanionFileUrl(slug, modelEntry)
+    if (!modelFileUrl) {
+      log.log(`Missing model file for installed companion: ${slug}, entry: ${modelEntry}`)
+      return null
+    }
+
+    // Parse model.json - need to handle both blob URL and data URL
+    let modelJson: any
+    if (modelFileUrl.startsWith('blob:') || modelFileUrl.startsWith('http')) {
+      // Fetch from blob URL
+      const response = await fetch(modelFileUrl)
+      modelJson = await response.json()
+    } else if (modelFileUrl.startsWith('data:')) {
+      // Parse from data URL
+      modelJson = JSON.parse(atob(modelFileUrl.split(',')[1]))
+    } else {
+      log.error(`Unknown URL format for model.json: ${modelFileUrl.substring(0, 30)}`)
+      return null
+    }
+
+    // Extract all relative file paths from model.json
+    const relativeFilePaths = extractModelFilePaths(modelJson)
+    log.log(`Found ${relativeFilePaths.length} files to load for model`)
+
+    // Fetch all files and create blob URL map
+    // Key = relative path (as in model.json), Value = blob URL
+    const blobUrlMap: Map<string, string> = new Map()
+    const createdBlobUrls: string[] = []
+
+    for (const relativePath of relativeFilePaths) {
+      // Convert relative path to IndexedDB path
+      const indexedDBPath = modelBaseDir + relativePath
+      const fileUrl = await getCompanionFileUrl(slug, indexedDBPath)
+      if (fileUrl) {
+        const blobUrl = ensureBlobUrl(fileUrl)
+        blobUrlMap.set(relativePath, blobUrl)
+        // Track if we created a new blob URL (data URL conversion)
+        if (blobUrl !== fileUrl) {
+          createdBlobUrls.push(blobUrl)
+        }
+      } else {
+        log.warn(`Missing file: ${indexedDBPath}`)
+      }
+    }
+
+    // Rewrite model.json with blob URLs
+    const rewrittenModelJson = rewriteModelPaths(modelJson, blobUrlMap)
+
+    // Create blob URL for modified model.json
+    const modelBlob = new Blob([JSON.stringify(rewrittenModelJson)], { type: 'application/json' })
+    const modelUrl = URL.createObjectURL(modelBlob)
+    createdBlobUrls.push(modelUrl)
+
+    // Track blob URLs for cleanup (only the ones we created)
+    trackBlobUrls(slug, createdBlobUrls)
+
     await markCompanionUsed(slug)
+
+    // Get preview image as blob URL
+    let previewUrl = ''
+    const previewFileUrl = await getCompanionFileUrl(slug, stored.manifest.preview)
+    if (previewFileUrl) {
+      previewUrl = ensureBlobUrl(previewFileUrl)
+      if (previewUrl !== previewFileUrl) {
+        trackBlobUrls(slug, [previewUrl])
+      }
+    }
+
+    log.log(`Loaded installed companion: ${slug} with ${createdBlobUrls.length} blob URLs`)
 
     return {
       manifest: stored.manifest,
       personality: stored.personality,
       modelUrl,
-      previewUrl: previewUrl || '',
-      baseUrl: `indexeddb://${slug}`, // Special marker for installed companions
+      previewUrl,
+      baseUrl: `indexeddb://${slug}`,
     }
   } catch (error) {
     log.error(`Failed to load installed companion ${slug}:`, error)
@@ -108,6 +383,7 @@ export async function getActiveCompanion(activeSlug?: string): Promise<LoadedCom
   if (currentCompanionSlug && currentCompanionSlug !== slug) {
     log.log(`Switching from ${currentCompanionSlug} to ${slug}, cleaning up blob URLs`)
     revokeCompanionBlobUrls(currentCompanionSlug)
+    revokeContentScriptBlobUrls(currentCompanionSlug)
   }
 
   let loadedCompanion: LoadedCompanion
