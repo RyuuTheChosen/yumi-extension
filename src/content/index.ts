@@ -47,48 +47,27 @@ function updateOverlayConfig(config: Parameters<typeof import('./overlayAvatar')
 }
 import { visionAbilities } from './visionAbilities'
 import './contextMenuHandler' // Initialize context menu handling
+import { setAvatarThinking, setAvatarSpeaking } from './avatarState'
 
-// Expression state management
-let expressionResetTimer: number | null = null
-
-// Handle avatar events and trigger expressions
+/**
+ * Handle avatar events and route to centralized state manager.
+ * The avatarState module handles all expression logic with proper
+ * priority (speaking > thinking > idle) and concurrent source tracking.
+ */
 bus.on('avatar', (event) => {
-	const expr = (window as any).__yumiExpression
-	if (!expr) return
-
-	// Clear any pending reset timer
-	if (expressionResetTimer) {
-		clearTimeout(expressionResetTimer)
-		expressionResetTimer = null
-	}
-
+	log.log('Avatar event:', event.type)
 	switch (event.type) {
 		case 'thinking:start':
-			// Thinking expression while AI is generating
-			expr.set('thinking')
-			log.log(' Expression: thinking')
+			setAvatarThinking(true)
 			break
 		case 'thinking:stop':
-			// Brief happy expression when response completes
-			expr.set('happy')
-			log.log(' Expression: happy')
-			// Reset to neutral after a moment
-			expressionResetTimer = window.setTimeout(() => {
-				expr.reset()
-				log.log(' Expression: reset to neutral')
-			}, 2000)
+			setAvatarThinking(false)
 			break
 		case 'speaking:start':
-			// Excited/talking expression during TTS
-			expr.set('happy')
-			log.log(' Expression: speaking (happy)')
+			setAvatarSpeaking(true)
 			break
 		case 'speaking:stop':
-			// Return to neutral after speaking
-			expressionResetTimer = window.setTimeout(() => {
-				expr.reset()
-				log.log(' Expression: reset after speaking')
-			}, 500)
+			setAvatarSpeaking(false)
 			break
 	}
 })

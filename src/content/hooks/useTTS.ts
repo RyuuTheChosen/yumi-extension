@@ -5,7 +5,7 @@
  * Manages WebSocket connection, sentence boundary detection, and lip sync integration.
  */
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createLogger } from '../../lib/core/debug'
 import { ttsService, ttsCoordinator, refreshAccessToken } from '../../lib/tts'
 import { StreamingTTSService, extractCompleteSentences } from '../../lib/tts/streamingTts'
@@ -56,15 +56,67 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
   const wsReadyRef = useRef<boolean>(false)
   const statusRef = useRef(status)
   const isStreamingActiveRef = useRef(false)
+  const prevStatusForThinkingRef = useRef(status)
 
   statusRef.current = status
+
+  /**
+   * Track TTS plugin ready state - reactive to plugins:loaded event
+   */
+  const [ttsPluginReady, setTtsPluginReady] = useState(() => isPluginActive('tts'))
+
+  /**
+   * Subscribe to plugin loading to handle race condition where
+   * ChatOverlay mounts before plugins are loaded.
+   * Always register listener for future plugin reloads (companion changes).
+   */
+  useEffect(() => {
+    /** Check synchronously - plugins may have loaded between render and effect */
+    if (isPluginActive('tts')) {
+      setTtsPluginReady(true)
+    }
+
+    /** Always register listener for plugin changes (companion switches may reload plugins) */
+    const unsub = bus.on('plugins:loaded', (plugins) => {
+      const isActive = plugins.includes('tts')
+      log.log('Plugin loaded event, tts active:', isActive)
+      setTtsPluginReady(isActive)
+    })
+    return unsub
+  }, [])
+
+  /**
+   * Emit avatar thinking events based on chat status changes.
+   * This is independent of TTS plugin status - expressions should work
+   * even when TTS is disabled.
+   */
+  useEffect(() => {
+    const prevStatus = prevStatusForThinkingRef.current
+    prevStatusForThinkingRef.current = status
+
+    log.log('Status change:', prevStatus, '->', status)
+
+    /** Trigger thinking:start when streaming begins (from idle or sending) */
+    if ((prevStatus === 'idle' || prevStatus === 'sending') && status === 'streaming') {
+      log.log('Emitting thinking:start')
+      bus.emit('avatar', { type: 'thinking:start' })
+    }
+
+    /** Trigger thinking:stop when streaming ends */
+    if (prevStatus === 'streaming' && status === 'idle') {
+      log.log('Emitting thinking:stop')
+      bus.emit('avatar', { type: 'thinking:stop' })
+    }
+  }, [status])
 
   /**
    * Initialize non-streaming TTS service with Hub credentials and companion voice
    */
   useEffect(() => {
-    if (!enabled || !isPluginActive('tts')) {
-      log.log('[useTTS] TTS disabled or plugin inactive')
+    log.log('Init check:', { enabled, ttsPluginReady, hubUrl: !!hubUrl })
+
+    if (!enabled || !ttsPluginReady) {
+      log.log('[useTTS] TTS disabled or plugin not ready')
       return
     }
 
@@ -83,14 +135,14 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
           voice: voiceId,
           volume,
         })
-        log.log('[useTTS] TTS initialized with companion voice:', voiceId)
+        log.log('TTS initialized with companion voice:', voiceId)
       } catch (err) {
         log.error('[useTTS] Failed to load companion for TTS:', err)
       }
     }
 
     initTTS()
-  }, [enabled, volume, activeCompanionSlug, hubUrl, hubAccessToken])
+  }, [enabled, ttsPluginReady, volume, activeCompanionSlug, hubUrl, hubAccessToken])
 
   /**
    * Streaming TTS: Set up bus subscription for stream events
@@ -144,20 +196,29 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
 
     if (!busStreamEndUnsubRef.current) {
       busStreamEndUnsubRef.current = bus.on('streamEnd', () => {
-        log.log('[useTTS] Stream ended')
+        log.log('Stream ended event')
         const remainingText = sentenceBufferRef.current.trim()
 
         if (remainingText) {
           if (streamingTtsRef.current && wsReadyRef.current) {
-            log.log('[useTTS] Flushing remaining text via WebSocket')
+            log.log('Flushing remaining text via WebSocket')
             streamingTtsRef.current.sendText(remainingText, true)
             sentenceBufferRef.current = ''
+            /** Close after flushing - only if WebSocket was ready */
+            log.log('Closing WebSocket after flush')
+            streamingTtsRef.current.close()
           } else {
-            log.log('[useTTS] WebSocket not ready, remaining text will be handled by fallback')
+            log.log('WebSocket not ready, remaining text will be handled by fallback')
+            /** DON'T close here - let the fallback handle it or wait for WS to connect */
           }
+        } else if (streamingTtsRef.current && wsReadyRef.current) {
+          /** No remaining text but WebSocket is ready - close it */
+          log.log('No remaining text, closing WebSocket')
+          streamingTtsRef.current.close()
         }
+        /** If WebSocket not ready and no remaining text, don't close - let it naturally complete */
       })
-      log.log('[useTTS] Bus streamEnd subscription created')
+      log.log('Bus streamEnd subscription created')
     }
 
     return () => {
@@ -221,12 +282,12 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
         speed: 1.0,
       })
 
-      log.log('[useTTS] Connecting to streaming TTS...')
+      log.log('Connecting to streaming TTS...')
       let connected = await streamingTtsRef.current.connect()
 
       /** If connection failed, try refreshing token and retry once */
       if (!connected) {
-        log.log('[useTTS] Connection failed, attempting token refresh...')
+        log.log('Connection failed, attempting token refresh...')
         const newToken = await refreshAccessToken()
         if (newToken) {
           streamingTtsRef.current.destroy()
@@ -241,14 +302,14 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
       }
 
       if (!connected) {
-        log.warn('[useTTS] Streaming TTS connection failed, will fall back to non-streaming')
+        log.warn('Streaming TTS connection failed, will fall back to non-streaming')
         streamingTtsFailedRef.current = true
         streamingTtsRef.current.destroy()
         streamingTtsRef.current = null
         return
       }
 
-      log.log('[useTTS] Streaming TTS connected')
+      log.log('Streaming TTS connected')
 
       ttsCoordinator.registerActive(() => {
         if (streamingTtsRef.current) {
@@ -269,11 +330,13 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
       bus.emit('avatar', { type: 'speaking:start' })
 
       const analyser = streamingTtsRef.current.getAnalyserNode()
+      log.log('Got analyser node:', !!analyser)
       if (analyser) {
         const connectLipSync = (window as { __yumiConnectStreamingAnalyser?: (a: AnalyserNode) => () => void }).__yumiConnectStreamingAnalyser
+        log.log('connectLipSync function available:', !!connectLipSync)
         if (connectLipSync) {
           disconnectLipSync = connectLipSync(analyser)
-          log.log('[useTTS] Streaming lip sync connected')
+          log.log('Streaming lip sync connected')
         }
       }
 
@@ -304,19 +367,29 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
     startStreamingConnection()
 
     return () => {
+      /**
+       * When status changes from streaming -> idle, we DON'T want to close
+       * the WebSocket immediately. The audio is still playing!
+       *
+       * Instead, flush any remaining text and let onAudioEnd handle cleanup.
+       * Only close if we're disabling TTS entirely or unmounting.
+       */
       if (streamingTtsRef.current && sentenceBufferRef.current.trim()) {
-        log.log('[useTTS] Flushing remaining text')
+        log.log('Cleanup: Flushing remaining text')
         streamingTtsRef.current.sendText(sentenceBufferRef.current, true)
         sentenceBufferRef.current = ''
       }
 
-      if (streamingTtsRef.current) {
+      /**
+       * Only close WebSocket if TTS is being disabled or we're unmounting.
+       * Check statusRef to see current status - if idle, audio should keep playing.
+       */
+      if (streamingTtsRef.current && statusRef.current !== 'idle') {
+        log.log('Cleanup: Closing WebSocket (status:', statusRef.current, ')')
         streamingTtsRef.current.close()
       }
 
-      if (disconnectLipSync) {
-        disconnectLipSync()
-      }
+      /** disconnectLipSync is handled in onAudioEnd callback */
     }
   }, [status, enabled, hubUrl, hubAccessToken, volume, activeCompanionSlug])
 
@@ -345,22 +418,30 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
       hasRemainingBuffer
     )
 
+    log.log('Fallback check:', {
+      wasStreamingActive,
+      hasUnsentText,
+      streamingFailed,
+      hadNoAudio,
+      hasPendingSentences,
+      hasRemainingBuffer,
+      shouldFallback
+    })
+
     if (shouldFallback) {
-      log.log('[useTTS] Falling back to non-streaming TTS', {
-        streamingFailed,
-        hadNoAudio,
-        hasPendingSentences,
-        hasRemainingBuffer
-      })
+      log.log('Falling back to non-streaming TTS')
       const textToSpeak = fullTextBufferRef.current
       fullTextBufferRef.current = ''
       sentenceBufferRef.current = ''
       pendingSentencesRef.current = []
       bus.emit('avatar', { type: 'speaking:start' })
       ttsService.speak(textToSpeak)
-        .then(() => bus.emit('avatar', { type: 'speaking:stop' }))
+        .then(() => {
+          log.log('Fallback TTS completed')
+          bus.emit('avatar', { type: 'speaking:stop' })
+        })
         .catch((err) => {
-          log.error('[useTTS] Fallback TTS failed:', err)
+          log.error('Fallback TTS failed:', err)
           bus.emit('avatar', { type: 'speaking:stop' })
         })
     }

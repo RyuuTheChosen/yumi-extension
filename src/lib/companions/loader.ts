@@ -98,6 +98,10 @@ const BUNDLED_COMPANION_ID = 'yumi'
 // Track the currently loaded companion slug for cleanup
 let currentCompanionSlug: string | null = null
 
+/** Cached loaded companion to avoid redundant blob URL creation */
+let cachedCompanion: LoadedCompanion | null = null
+let cachedCompanionSlug: string | null = null
+
 // Content script blob URL tracking (separate from db.ts which only works in extension context)
 const contentScriptBlobUrls: Map<string, string[]> = new Map()
 
@@ -124,6 +128,15 @@ export function revokeContentScriptBlobUrls(slug: string): number {
   contentScriptBlobUrls.delete(slug)
   log.log(`Revoked ${count} content script blob URLs for ${slug}`)
   return count
+}
+
+/**
+ * Clear the companion cache (call when companion is updated/uninstalled)
+ */
+export function clearCompanionCache(): void {
+  cachedCompanion = null
+  cachedCompanionSlug = null
+  log.log('Cleared companion cache')
 }
 
 /**
@@ -177,12 +190,10 @@ function extractModelFilePaths(modelJson: any): string[] {
  * - data: URLs are converted to blob URLs
  */
 function ensureBlobUrl(url: string): string {
-  // If already a blob URL, return as-is
   if (url.startsWith('blob:')) {
     return url
   }
 
-  // Convert data URL to blob URL
   if (url.startsWith('data:')) {
     const [header, base64] = url.split(',')
     const mimeMatch = header.match(/data:([^;]+)/)
@@ -198,7 +209,6 @@ function ensureBlobUrl(url: string): string {
     return URL.createObjectURL(blob)
   }
 
-  // Unknown format, return as-is (shouldn't happen)
   return url
 }
 
@@ -221,7 +231,16 @@ function rewriteModelPaths(modelJson: any, blobUrlMap: Map<string, string>): any
 
   if (refs.Expressions) {
     for (const expr of refs.Expressions) {
-      if (expr.File && blobUrlMap.has(expr.File)) expr.File = blobUrlMap.get(expr.File)
+      console.log(`[REWRITE] Expression "${expr.Name}" path: "${expr.File}"`)
+      console.log(`[REWRITE] Map has key: ${blobUrlMap.has(expr.File)}`)
+      if (expr.File && blobUrlMap.has(expr.File)) {
+        const blobUrl = blobUrlMap.get(expr.File)
+        console.log(`[REWRITE] -> Rewritten to blob URL: ${blobUrl?.substring(0, 60)}...`)
+        expr.File = blobUrl
+      } else {
+        console.log(`[REWRITE] -> NOT FOUND IN MAP`)
+        console.log(`[REWRITE] Available keys:`, [...blobUrlMap.keys()].filter(k => k.includes('exp') || k.includes('Exp')))
+      }
     }
   }
 
@@ -276,6 +295,7 @@ export async function loadBundledCompanion(companionId: string = BUNDLED_COMPANI
 export async function loadInstalledCompanion(slug: string): Promise<LoadedCompanion | null> {
   try {
     log.log(`Loading installed companion: ${slug}`)
+
     const stored = await getCompanionMetadata(slug)
     if (!stored) {
       log.log(`No metadata found for companion: ${slug}`)
@@ -336,6 +356,21 @@ export async function loadInstalledCompanion(slug: string): Promise<LoadedCompan
     // Rewrite model.json with blob URLs
     const rewrittenModelJson = rewriteModelPaths(modelJson, blobUrlMap)
 
+    // DEBUG: Log expression paths after rewriting
+    log.log('=== DEBUG: Expression paths after rewriting ===')
+    if (rewrittenModelJson.FileReferences?.Expressions) {
+      for (const expr of rewrittenModelJson.FileReferences.Expressions) {
+        const isBlobUrl = expr.File?.startsWith('blob:')
+        log.log(`Expression "${expr.Name}": ${isBlobUrl ? 'BLOB URL' : 'RELATIVE PATH'} - ${expr.File?.substring(0, 60)}`)
+      }
+    }
+    log.log('=== DEBUG: BlobUrlMap contents (first 5) ===')
+    let count = 0
+    for (const [key, value] of blobUrlMap.entries()) {
+      if (count++ >= 5) break
+      log.log(`  "${key}" -> ${value.substring(0, 50)}...`)
+    }
+
     // Create blob URL for modified model.json
     const modelBlob = new Blob([JSON.stringify(rewrittenModelJson)], { type: 'application/json' })
     const modelUrl = URL.createObjectURL(modelBlob)
@@ -373,17 +408,32 @@ export async function loadInstalledCompanion(slug: string): Promise<LoadedCompan
 
 /**
  * Get the currently active companion
- * Always tries IndexedDB first (for Hub-synced plugins), then falls back to bundled
- * Cleans up blob URLs from previous companion when switching
+ * Returns cached companion if same slug to avoid redundant blob URL creation.
+ * Always tries IndexedDB first (for Hub-synced plugins), then falls back to bundled.
+ * Cleans up blob URLs from previous companion when switching.
  */
 export async function getActiveCompanion(activeSlug?: string): Promise<LoadedCompanion> {
   const slug = activeSlug || BUNDLED_COMPANION_ID
+
+  console.log(`[getActiveCompanion] Called with slug="${slug}", cachedSlug="${cachedCompanionSlug}", hasCached=${!!cachedCompanion}`)
+
+  /** Return cached companion if same slug (avoids redundant blob URL creation) */
+  if (cachedCompanion && cachedCompanionSlug === slug) {
+    console.log(`[getActiveCompanion] CACHE HIT - returning cached companion: ${slug}`)
+    return cachedCompanion
+  }
+
+  console.log(`[getActiveCompanion] CACHE MISS - loading companion: ${slug}`)
 
   /** Clean up blob URLs from previous companion if switching */
   if (currentCompanionSlug && currentCompanionSlug !== slug) {
     log.log(`Switching from ${currentCompanionSlug} to ${slug}, cleaning up blob URLs`)
     revokeCompanionBlobUrls(currentCompanionSlug)
     revokeContentScriptBlobUrls(currentCompanionSlug)
+    cachedCompanion = null
+    cachedCompanionSlug = null
+    /** Small delay to allow browser to release resources before loading new companion */
+    await new Promise(resolve => setTimeout(resolve, 50))
   }
 
   let loadedCompanion: LoadedCompanion
@@ -420,8 +470,12 @@ export async function getActiveCompanion(activeSlug?: string): Promise<LoadedCom
     loadedCompanion = await loadBundledCompanion(BUNDLED_COMPANION_ID)
   }
 
-  /** Track the new companion slug */
+  /** Track the new companion slug and cache the result */
   currentCompanionSlug = loadedCompanion.manifest.id
+  cachedCompanion = loadedCompanion
+  cachedCompanionSlug = slug
+
+  console.log(`[getActiveCompanion] SET CACHE: slug="${slug}", manifest.id="${loadedCompanion.manifest.id}"`)
 
   return loadedCompanion
 }
@@ -560,6 +614,13 @@ export async function syncCompanionFromHub(
 
       await saveCompanionMetadata(updatedCompanion)
       log.log(`Synced personality for ${slug}`, pluginsChanged ? '(plugins changed)' : '')
+
+      /** Clear cache so next getActiveCompanion() loads fresh data */
+      if (cachedCompanionSlug === slug) {
+        cachedCompanion = null
+        cachedCompanionSlug = null
+        log.log(`Cleared cache for updated companion: ${slug}`)
+      }
 
       return {
         synced: true,

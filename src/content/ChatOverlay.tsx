@@ -130,8 +130,6 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
     status,
     displayMessages,
     currentScopeId: currentScope.id,
-    ttsEnabled,
-    streamingTtsFailedRef
   })
 
   const [searchActive, setSearchActive] = useState(false)

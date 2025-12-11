@@ -16,7 +16,7 @@ import { buildPluginPromptAdditions as getPluginPromptAdditions } from './plugin
 /**
  * Page context info passed to prompt builder
  */
-export interface PageContextInfo {
+interface PageContextInfo {
   pageType?: string
   pageUrl?: string
   pageTitle?: string
@@ -159,85 +159,5 @@ export function buildChatSystemPrompt(
   }
   prompt += `- **Privacy**: All conversations are private and secure\n`
 
-  return prompt
-}
-
-/**
- * Build unified system prompt for vision-based queries with personality integration
- * 
- * @param hasImage - Whether the query includes an image
- * @param personality - User's personality configuration
- * @param source - Source component ('selection-spotter', 'image-understanding', or other)
- * @returns Formatted vision system prompt with personality and analysis
- */
-export function buildVisionChatSystemPrompt(hasImage: boolean, personality: any, source: string): string {
-  const basePersonality = personality?.systemPrompt || DEFAULT_PERSONALITY.systemPrompt
-  
-  let prompt = `${basePersonality}
-
-## Vision Analysis Mode
-You're helping analyze ${hasImage ? 'images and text' : 'selected text'} from web pages.
-
-Approach:
-1. **Analyze thoroughly** - Understand the content deeply
-2. **Respond naturally** - Use your friendly, conversational Yumi personality  
-3. **Be genuinely helpful** - Provide insights users actually want
-
-${hasImage ? 'For images: Describe what you see, extract any text (OCR), and explain significance.' : ''}
-Stay curious, enthusiastic, and supportive in your responses.`
-
-  return prompt
-}
-
-/**
- * Build system prompt for vision-based queries (pure analysis, no personality)
- * 
- * @param hasImage - Whether the query includes an image
- * @param source - Source component ('selection-spotter', 'image-understanding', or other)
- * @returns Formatted vision system prompt string for analytical response
- */
-export function buildVisionSystemPrompt(hasImage: boolean, source: string): string {
-  const timestamp = new Date().toLocaleString()
-  
-  let prompt = `You are an analytical AI assistant specialized in ${hasImage ? 'vision and text analysis' : 'text analysis'}.\n\n`
-  
-  prompt += `## Your Role\n`
-  prompt += `Provide accurate, comprehensive analysis without conversational elements. Your output will be processed by another system for user delivery.\n\n`
-  
-  // Vision-specific framework
-  if (hasImage) {
-    prompt += `## Vision Analysis Framework\n`
-    prompt += `Follow this systematic approach:\n`
-    prompt += `1. **OCR Priority**: Extract and transcribe ALL visible text accurately\n`
-    prompt += `2. **Visual Elements**: Describe layout, colors, design, UI components\n`
-    prompt += `3. **Content Type**: Identify if it's code, design, chart, document, etc.\n`
-    prompt += `4. **Context Analysis**: Connect visual elements to their purpose/meaning\n`
-    prompt += `5. **Structured Output**: Organize findings clearly with headings\n`
-    prompt += `6. **Actionable Insights**: Provide useful observations and interpretations\n\n`
-  } else {
-    prompt += `## Text Analysis Framework\n`
-    prompt += `1. **Content Understanding**: Identify the main topic and context\n`
-    prompt += `2. **Task Classification**: Determine if this is explanation, translation, summary, or analysis\n`
-    prompt += `3. **Comprehensive Response**: Address all aspects of the user's query\n`
-    prompt += `4. **Structured Output**: Use clear organization with headings if needed\n`
-    prompt += `5. **Actionable Insights**: Provide useful observations\n\n`
-  }
-  
-  // Response standards
-  prompt += `## Output Standards\n`
-  prompt += `- **Accuracy**: Provide precise, factual information\n`
-  prompt += `- **Completeness**: Cover all relevant aspects thoroughly\n`
-  prompt += `- **Clarity**: Use clear structure and appropriate detail\n`
-  prompt += `- **Objectivity**: Focus on analysis, not conversational tone\n`
-  
-  // Source-specific task
-  if (source === 'selection-spotter') {
-    prompt += `\n\n**Current Task**: Analyze the selected text and respond to user instructions about it.`
-  } else if (source === 'image-understanding') {
-    prompt += `\n\n**Current Task**: Comprehensive image analysis with detailed OCR and visual description.`
-  }
-  
-  prompt += `\n\n**Session**: ${timestamp}`
-  
   return prompt
 }

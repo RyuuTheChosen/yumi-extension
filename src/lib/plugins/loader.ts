@@ -7,6 +7,7 @@ import {
   isPluginRegistered,
 } from './registry'
 import { createLogger } from '../core/debug'
+import { bus } from '../core/bus'
 
 const log = createLogger('PluginLoader')
 
@@ -58,7 +59,11 @@ export async function loadPluginsForCompanion(
   activePlugins = enabledPlugins
   activePluginIds = new Set(enabledPlugins.map(p => p.manifest.id))
 
-  log.log('Active plugins:', Array.from(activePluginIds))
+  const activePluginList = Array.from(activePluginIds)
+  log.log('Active plugins:', activePluginList)
+  console.log('[Plugins] Active:', activePluginList)
+
+  bus.emit('plugins:loaded', activePluginList)
 
   return enabledPlugins
 }

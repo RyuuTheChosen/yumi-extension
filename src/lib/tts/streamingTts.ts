@@ -212,7 +212,15 @@ export class StreamingTTSService {
       case 'done':
         log.log('Server signaled stream complete')
         this.streamDone = true
+        /** Close WebSocket now that server is done sending */
+        if (this.ws) {
+          this.ws.close()
+          this.ws = null
+        }
+        /** If no audio playing and queue empty, fire callback immediately */
         if (!this.isPlaying && this.audioQueue.length === 0) {
+          log.log('No audio pending, firing audioEndCallback')
+          this.setState('disconnected')
           this.audioEndCallback?.()
         }
         break
@@ -314,6 +322,11 @@ export class StreamingTTSService {
       return
     }
 
+    if (this.closeRequested) {
+      log.warn('Cannot send text: close already requested')
+      return
+    }
+
     if (!text.trim()) {
       return
     }
@@ -343,6 +356,7 @@ export class StreamingTTSService {
    * Audio queue is preserved to let pending audio finish playing.
    */
   close(): void {
+    log.log('close() called')
     if (this.ws) {
       /** If still connecting, set flag to close once open (avoids "closed before established" error) */
       if (this.ws.readyState === WebSocket.CONNECTING) {
@@ -352,27 +366,20 @@ export class StreamingTTSService {
       }
 
       if (this.ws.readyState === WebSocket.OPEN) {
+        /**
+         * Send close message to tell server we're done sending text.
+         * Server will finish generating audio and send 'done' when complete.
+         * DON'T close WebSocket yet - wait for server's 'done' message.
+         */
+        log.log('Sending close message to server')
         const closeMsg: StreamingTTSOutMessage = { type: 'close' }
         this.ws.send(JSON.stringify(closeMsg))
       }
-      this.ws.close()
-      this.ws = null
+      /** Don't close WebSocket here - let server close it or wait for 'done' */
     }
 
-    // Mark stream as done so audioEndCallback fires when queue empties
-    this.streamDone = true
-
-    // Don't clear audio queue - let pending audio finish playing
-    // If nothing is playing but queue has items, start playback
-    if (!this.isPlaying && this.audioQueue.length > 0) {
-      this.playNextChunk()
-    }
-
-    // If already done playing, signal now
-    if (!this.isPlaying && this.audioQueue.length === 0) {
-      this.setState('disconnected')
-      this.audioEndCallback?.()
-    }
+    /** Mark that we've requested close - don't accept more text */
+    this.closeRequested = true
   }
 
   /**

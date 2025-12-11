@@ -5,7 +5,7 @@ import type { YumiError } from './errors'
 export type AvatarEvent =
   | { type: 'thinking:start' }
   | { type: 'thinking:stop' }
-  | { type: 'speaking:start'; voiceId?: string }
+  | { type: 'speaking:start' }
   | { type: 'speaking:stop' }
 
 // Page context for proactive system
@@ -31,6 +31,7 @@ interface EventMap {
   streamRetry: (info: { attempt: number; nextDelayMs: number; requestId?: string }) => void
   streamCancel: (meta?: { requestId?: string }) => void
   avatar: (payload: AvatarEvent) => void
+  'plugins:loaded': (plugins: string[]) => void
   // Companion events
   'companion:loading': (slug: string) => void
   'companion:changed': (companion: unknown) => void

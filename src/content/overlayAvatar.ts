@@ -19,6 +19,28 @@ import './styles'
 // Install unsafe-eval patch for Chrome extension CSP compatibility
 installUnsafeEval(PIXI)
 
+/**
+ * Patch Live2D URL resolver to handle blob URLs correctly.
+ * Must be called on the SAME module instance that loads models.
+ * This is critical for installed companions loaded from IndexedDB.
+ */
+let patchedLive2D = false
+function patchResolveURL(Cubism4ModelSettings: any): void {
+  if (patchedLive2D) return
+
+  const originalResolveURL = Cubism4ModelSettings.prototype.resolveURL
+  Cubism4ModelSettings.prototype.resolveURL = function (path: string): string {
+    if (path.startsWith('blob:')) {
+      log.log(`[PATCH] resolveURL: blob URL passed through`)
+      return path
+    }
+    return originalResolveURL.call(this, path)
+  }
+
+  patchedLive2D = true
+  log.log('[OK] Patched Live2D URL resolver for blob URL support')
+}
+
 // Configure PIXI settings before any usage
 if (PIXI.settings) {
   PIXI.settings.FAIL_IF_MAJOR_PERFORMANCE_CAVEAT = false
@@ -139,35 +161,114 @@ async function ensureCubismCoreLoaded(timeoutMs = 2000): Promise<void> {
  * Initialize debug panel hook for manual parameter tuning.
  * Also applies lip sync mouth values here for correct timing.
  * Native expressions are handled by pixi-live2d-display's expression system.
+ *
+ * NOTE: For installed companions loaded from blob URLs, internalModel may not
+ * be immediately available after Live2DModel.from() resolves. We poll until ready.
  */
-function initDebugPanelHook(): void {
-  if (!model?.internalModel) return
+async function initDebugPanelHook(): Promise<void> {
+  console.log('[HOOK DEBUG] initDebugPanelHook called, model exists:', !!model)
+  console.log('[HOOK DEBUG] internalModel exists:', !!model?.internalModel)
 
-  // Hook into Cubism4's beforeModelUpdate event for debug panel and lip sync
-  model.internalModel.on('beforeModelUpdate', () => {
-    const coreModel = model.internalModel.coreModel
+  /** Wait for internalModel to be available (may be async for blob URLs) */
+  let attempts = 0
+  const maxAttempts = 50  /** 5 seconds max wait (50 * 100ms) */
+  while (!model?.internalModel && attempts < maxAttempts) {
+    await new Promise(resolve => setTimeout(resolve, 100))
+    attempts++
+    if (attempts % 10 === 0) {
+      console.log(`[HOOK DEBUG] Waiting for internalModel... attempt ${attempts}`)
+    }
+  }
 
-    // Apply lip sync mouth value (always, unless debug panel is active)
-    if (!debugPanelActive && lipSyncMouthValue > 0) {
-      try {
-        coreModel.setParameterValueById('ParamMouthOpenY', lipSyncMouthValue, 1.0)
-      } catch (err) {
-        // Parameter might not exist
-      }
+  if (!model?.internalModel) {
+    console.error('[HOOK FAIL] internalModel not available after 5 seconds - lip sync disabled')
+    return
+  }
+
+  if (attempts > 0) {
+    console.log(`[HOOK OK] internalModel ready after ${attempts * 100}ms`)
+  } else {
+    console.log('[HOOK OK] internalModel was immediately available')
+  }
+
+  /**
+   * Hook into afterMotionUpdate for lip sync.
+   * This fires AFTER expressions are applied by motionManager.update(),
+   * allowing lip sync to blend with expression values rather than overwriting them.
+   */
+  let lipSyncLogCounter = 0
+  let hookCallCounter = 0
+  model.internalModel.on('afterMotionUpdate', () => {
+    hookCallCounter++
+    if (hookCallCounter % 120 === 1) {
+      console.log(`[afterMotionUpdate] Hook fired, lipSyncMouthValue: ${lipSyncMouthValue.toFixed(2)}, debugPanelActive: ${debugPanelActive}`)
     }
 
-    // Debug panel overrides all values when active
+    if (debugPanelActive) return
+
+    if (lipSyncMouthValue > 0) {
+      try {
+        const coreModel = model.internalModel.coreModel
+        coreModel.setParameterValueById('ParamMouthOpenY', lipSyncMouthValue, 1.0)
+
+        lipSyncLogCounter++
+        if (lipSyncLogCounter % 30 === 1) {
+          console.log(`[LipSync] Mouth value: ${lipSyncMouthValue.toFixed(2)}`)
+        }
+      } catch (err) {
+        /** Parameter might not exist */
+      }
+    } else if (lipSyncLogCounter > 0) {
+      console.log('[LipSync] Mouth closed')
+      lipSyncLogCounter = 0
+    }
+  })
+  console.log('[HOOK OK] Lip sync hook initialized (afterMotionUpdate)')
+
+  /**
+   * Hook into beforeModelUpdate for debug panel override.
+   * This fires right before rendering, allowing debug panel to override ALL values.
+   */
+  model.internalModel.on('beforeModelUpdate', () => {
     if (debugPanelActive && Object.keys(debugPanelValues).length > 0) {
       try {
+        const coreModel = model.internalModel.coreModel
         for (const [paramId, value] of Object.entries(debugPanelValues)) {
           coreModel.setParameterValueById(paramId, value, 1.0)
         }
       } catch (err) {
-        // Silently fail
+        /** Silently fail */
       }
     }
   })
-  log.log('[OK] Debug panel hook initialized (with lip sync)')
+  console.log('[HOOK OK] Debug panel hook initialized (beforeModelUpdate)')
+}
+
+/**
+ * Preload all expressions to avoid lazy loading issues.
+ * pixi-live2d-display loads expressions lazily by default, which means
+ * expressions are only loaded when first requested. This can cause
+ * expression changes to fail if the expression file hasn't been loaded yet.
+ */
+async function preloadExpressions(): Promise<void> {
+  const em = (model as any)?.internalModel?.motionManager?.expressionManager
+  if (!em || !em.definitions) {
+    console.log('[Expressions] No expression manager or definitions found')
+    return
+  }
+
+  console.log(`[Expressions] Preloading ${em.definitions.length} expressions...`)
+
+  for (let i = 0; i < em.definitions.length; i++) {
+    try {
+      await em.loadExpression(i)
+      console.log(`[Expressions] Loaded: ${em.definitions[i]?.Name}`)
+    } catch (err) {
+      console.error(`[Expressions] Failed to load ${em.definitions[i]?.Name}:`, err)
+    }
+  }
+
+  console.log('[Expressions] Preload complete')
 }
 
 // connectAudio removed - pixi-live2d-display-lipsyncpatch handles audio connection internally
@@ -615,8 +716,11 @@ async function createOverlay(cfg: OverlayConfig) {
 
     // 5. Dynamically import Live2D library AFTER SDK is loaded
     log.log('Importing Live2D library...')
-    const { Live2DModel, MotionPreloadStrategy, config: live2dConfig } = await import('pixi-live2d-display/lib/cubism4')
+    const { Live2DModel, MotionPreloadStrategy, config: live2dConfig, Cubism4ModelSettings } = await import('pixi-live2d-display/lib/cubism4')
     log.log('[OK] Live2D library imported')
+
+    // 5.5. Patch URL resolver for blob URL support (installed companions from IndexedDB)
+    patchResolveURL(Cubism4ModelSettings)
 
     // 6. Configure Live2D (quiet logs, no sound)
     live2dConfig.sound = false
@@ -679,8 +783,11 @@ async function createOverlay(cfg: OverlayConfig) {
     log.log(`[ANCHOR] Anchor: (${model.anchor.x}, ${model.anchor.y}) - bottom-center`)
     
     // 9. Lip sync handled by pixi-live2d-display-lipsyncpatch via model.speak()
-    // Debug panel hook for manual parameter tuning
-    initDebugPanelHook()
+    // Debug panel hook for manual parameter tuning (async for blob URL models)
+    await initDebugPanelHook()
+
+    // 9.5. Preload all expressions to avoid lazy loading issues with blob URLs
+    await preloadExpressions()
 
     // 10. Add gentle idle animation (breathing effect)
     let t = 0
@@ -757,18 +864,17 @@ async function createOverlay(cfg: OverlayConfig) {
     const TAP_EXPRESSIONS = ['happy', 'surprised', 'smiling', 'scared']
     let tapIndex = 0
     let lastTapTime = 0
-    canvas.addEventListener('click', (e) => {
+    canvas.addEventListener('click', () => {
       const now = Date.now()
-      if (now - lastTapTime < 300) return  // Debounce rapid clicks
+      if (now - lastTapTime < 300) return
       lastTapTime = now
 
-      // Cycle through tap expressions using native system
       const expr = TAP_EXPRESSIONS[tapIndex % TAP_EXPRESSIONS.length]
       tapIndex++
-      model?.expression(expr)
-      log.log(`[TAP] Tap reaction: ${expr}`)
 
-      // Return to neutral after 1.5 seconds
+      model?.expression(expr)
+      log.log(`[TAP] Expression: ${expr}`)
+
       setTimeout(() => {
         model?.expression('neutral')
       }, 1500)
@@ -1209,7 +1315,8 @@ export function connectStreamingAnalyser(analyser: AnalyserNode): () => void {
   // Data buffer for frequency analysis
   const dataArray = new Uint8Array(analyser.frequencyBinCount)
 
-  // Animation loop for streaming lip sync
+  /** Animation loop for streaming lip sync */
+  let lipSyncDebugCounter = 0
   const updateLipSync = () => {
     if (!model?.internalModel?.coreModel) {
       streamingLipSyncFrame = null
@@ -1217,11 +1324,13 @@ export function connectStreamingAnalyser(analyser: AnalyserNode): () => void {
       return
     }
 
-    // Get frequency data from external analyser
+    /** Get frequency data from external analyser */
     analyser.getByteFrequencyData(dataArray)
 
-    // Calculate volume from speech frequencies (same logic as connectAndPlayAudio)
-    // Bins 1-23 cover approximately 172Hz to 3956Hz (speech range)
+    /**
+     * Calculate volume from speech frequencies (same logic as connectAndPlayAudio)
+     * Bins 1-23 cover approximately 172Hz to 3956Hz (speech range)
+     */
     let sum = 0
     const speechStart = 1
     const speechEnd = Math.min(24, dataArray.length)
@@ -1230,16 +1339,22 @@ export function connectStreamingAnalyser(analyser: AnalyserNode): () => void {
     }
     const avgVolume = sum / (speechEnd - speechStart)
 
-    // Normalize to 0-1 range with threshold and scaling
+    /** Normalize to 0-1 range with threshold and scaling */
     const threshold = 15
     const scale = 2.5
     let mouthOpen = Math.max(0, (avgVolume - threshold) / (255 - threshold)) * scale
     mouthOpen = Math.min(1.0, mouthOpen)
 
-    // Store mouth value - will be applied in beforeModelUpdate hook
+    /** Store mouth value - will be applied in afterMotionUpdate hook */
     lipSyncMouthValue = mouthOpen
 
-    // Continue animation loop
+    /** Debug logging every 60 frames */
+    lipSyncDebugCounter++
+    if (lipSyncDebugCounter % 60 === 1) {
+      console.log(`[LipSync Loop] avgVolume: ${avgVolume.toFixed(1)}, mouthOpen: ${mouthOpen.toFixed(2)}`)
+    }
+
+    /** Continue animation loop */
     streamingLipSyncFrame = requestAnimationFrame(updateLipSync)
   }
 
@@ -1266,11 +1381,18 @@ if (typeof window !== 'undefined') {
 
   // Expression API using native pixi-live2d-display expressions (.exp3.json files)
   ;(window as any).__yumiExpression = {
-    // Set expression by name (e.g., 'happy', 'sad', 'neutral')
-    set: (name: string) => {
+    /**
+     * Set expression by name (e.g., 'happy', 'sad', 'neutral')
+     * Note: model.expression() returns a Promise - we await it for proper loading
+     */
+    set: async (name: string) => {
       if (model) {
-        model.expression(name)
-        log.log(`Native expression set: ${name}`)
+        try {
+          await model.expression(name)
+          log.log(`Native expression set: ${name}`)
+        } catch (err) {
+          log.error(`Failed to set expression ${name}:`, err)
+        }
       }
     },
     // Get current expression name
@@ -1288,11 +1410,18 @@ if (typeof window !== 'undefined') {
       }
       return []
     },
-    // Reset to neutral
-    reset: () => {
+    /**
+     * Reset to neutral expression
+     * Note: model.expression() returns a Promise - we await it for proper loading
+     */
+    reset: async () => {
       if (model) {
-        model.expression('neutral')
-        log.log('Expression reset to neutral')
+        try {
+          await model.expression('neutral')
+          log.log('Expression reset to neutral')
+        } catch (err) {
+          log.error('Failed to reset expression:', err)
+        }
       }
     }
   }

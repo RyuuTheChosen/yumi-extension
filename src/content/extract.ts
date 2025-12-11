@@ -53,33 +53,6 @@ function findMainElement(doc: Document): HTMLElement | null {
 }
 
 /**
- * Get page context for chat messages
- */
-export async function getPageContextForChat(): Promise<{
-  url: string
-  title: string
-  pageType: string
-  content?: string
-}> {
-  try {
-    const context = await extractPageContext({ level: 2 })
-    return {
-      url: context.url,
-      title: context.title,
-      pageType: context.type,
-      content: context.mainContent?.slice(0, 5000),
-    }
-  } catch (error) {
-    log.error('Failed to get context:', error)
-    return {
-      url: window.location.href,
-      title: document.title,
-      pageType: 'other',
-    }
-  }
-}
-
-/**
  * Re-export from context module for convenience
  */
 export { extractPageContext } from '../lib/context'
