@@ -1,173 +1,100 @@
-# Yumi - AI Web Pals Extension
+# Yumi - AI Web Pals
 
-> **Contract Address**: `HeXyoZWLY4aasdqt8ndYJx6iMGQoqPyHKZpHMPZhpump`
+<p align="center">
+  <img src="https://yumi-pals.com/yumi-preview.png" alt="Yumi AI Companion" width="400">
+</p>
 
-> **Status**: Chrome Web Store Pending Review | Version 1.0.0
+<p align="center">
+  <strong>Your AI companion that lives in your browser</strong>
+</p>
 
-Chrome Extension (MV3) - AI companions that live in your browser with memory, vision, and voice.
-
-**Links**: [Discord](https://discord.gg/QPmrJS8baz) | [Website](https://yumi-pals.com)
+<p align="center">
+  <a href="https://chromewebstore.google.com/detail/yumi-ai-web-pals/midjgogdhbchkaokoofcofijpojkopkg">Chrome Web Store</a> |
+  <a href="https://discord.gg/QPmrJS8baz">Discord</a> |
+  <a href="https://yumi-pals.com">Website</a>
+</p>
 
 ---
 
-## Security & Transparency
+## What is Yumi?
 
-This source code is published for transparency so users and security researchers can audit what runs in their browser.
+Yumi is a Chrome extension that adds an animated AI companion to any webpage. She remembers your conversations, speaks with a natural voice, can see what's on your screen, and helps you browse the web.
 
-### What We Collect
-- **Nothing sent without auth**: Extension requires Discord activation
-- **No telemetry**: We don't track usage or collect analytics
-- **Local-first**: Messages and memories stay in your browser (IndexedDB)
+## Features
+
+### Animated Live2D Avatar
+A beautiful animated companion that reacts to conversations with expressions, eye tracking, and lip-synced speech.
+
+### Memory System
+Yumi remembers what you tell her - your preferences, projects, and past conversations. She recalls relevant information when you need it.
+
+### Voice Chat
+Natural text-to-speech powered by ElevenLabs. Yumi speaks her responses with lip-synced animations.
+
+### Vision
+Yumi can see your screen. Right-click on any image or take a screenshot to discuss what you're looking at.
+
+### Web Search
+Ask Yumi about current events, prices, or anything that needs fresh information. She'll search the web and summarize results.
+
+### Page Awareness
+Yumi understands the page you're viewing. Ask her about articles, code, or any content on the current page.
+
+## Installation
+
+1. **Install from Chrome Web Store**
+
+   [Get Yumi from Chrome Web Store](https://chromewebstore.google.com/detail/yumi-ai-web-pals/midjgogdhbchkaokoofcofijpojkopkg)
+
+2. **Join Discord for Access**
+
+   Join our [Discord server](https://discord.gg/QPmrJS8baz) and use the `/getcode` command to get your activation code.
+
+3. **Activate the Extension**
+
+   Click the Yumi extension icon and enter your activation code.
+
+4. **Browse Companions**
+
+   Visit [yumi-pals.com/companions](https://yumi-pals.com/companions) to install your companion.
+
+## How to Use
+
+- **Chat**: Click the avatar to open the chat window
+- **Voice**: Enable TTS in settings to hear Yumi speak
+- **Vision**: Right-click any image and select "Ask Yumi about this"
+- **Screenshot**: Use the camera button to capture and discuss your screen
+- **Settings**: Click the extension icon to adjust avatar size, position, and preferences
+
+## Privacy & Security
+
+- **Local-first**: Your messages and memories are stored locally in your browser
+- **No tracking**: We don't collect analytics or usage data
+- **Transparent**: This source code is published so you can audit what runs in your browser
+- **Your data**: Export or delete your data anytime from the settings panel
 
 ### Permissions Explained
 
 | Permission | Why |
 |------------|-----|
-| `storage` | Save settings, auth tokens, installed companions |
+| `storage` | Save your settings and auth token |
 | `contextMenus` | Right-click menu for vision features |
-| `activeTab` | Access current page for context extraction |
-| `host_permissions` | Communicate with AI provider APIs through Hub |
+| `activeTab` | Read the current page so Yumi can help you with it |
 
-### Reporting Security Issues
-If you find a security vulnerability, please email security@yumi-pals.com or open a GitHub issue.
+## Support
+
+- **Discord**: [discord.gg/QPmrJS8baz](https://discord.gg/QPmrJS8baz)
+- **Website**: [yumi-pals.com](https://yumi-pals.com)
+- **Issues**: [GitHub Issues](https://github.com/RyuuTheChosen/yumi-extension/issues)
+
+## Contract Address
+
+```
+HeXyoZWLY4aasdqt8ndYJx6iMGQoqPyHKZpHMPZhpump
+```
 
 ---
 
-## Quick Start
-
-```bash
-npm install
-npm run build
-```
-
-Load `dist/` as unpacked extension in `chrome://extensions` (Developer mode).
-
-## Development
-
-```bash
-npm run dev      # Development build with watch
-npm run build    # Production build
-npx tsc --noEmit # Type checking
-```
-
-## Build Targets
-
-The extension uses 4 separate Vite builds:
-
-| Target | Output | Purpose |
-|--------|--------|---------|
-| Prelude | IIFE | Sets up `Module.locateFile` for Cubism WASM |
-| Content | IIFE | Main overlay with React, Live2D, chat UI |
-| Popup | ES modules | Settings panel with code splitting |
-| Background | ES modules | Service worker for AI streaming |
-
-## Structure
-
-```
-src/
-├── background/
-│   ├── index.ts              # AI streaming, memory extraction
-│   └── externalMessaging.ts  # Website-extension communication
-├── content/
-│   ├── index.ts              # Bootstrap, Hub auth gating
-│   ├── ChatOverlay.tsx       # Main chat UI
-│   ├── overlayAvatar.ts      # Live2D avatar + lip sync
-│   ├── LipSyncController.ts  # Audio analysis for mouth movement
-│   └── components/           # React UI components
-├── lib/
-│   ├── companions/           # Companion install/load system
-│   ├── memory/               # Memory extraction and retrieval
-│   ├── search/               # Web search via SearXNG
-│   ├── tts/                  # ElevenLabs TTS integration
-│   ├── stores/               # Zustand stores (settings, chat, personality)
-│   ├── bus.ts                # Event bus for streaming/avatar events
-│   └── errors.ts             # Error taxonomy
-├── popup/
-│   └── components/           # Settings panel UI
-└── styles/
-    └── tailwind.css
-```
-
-## Features
-
-### Hub Connection
-- Requires Yumi Hub activation (Discord invite code)
-- Avatar only displays when authenticated
-- All AI requests route through Hub API (https://historic-tessy-yumi-labs-d3fc2b1c.koyeb.app)
-
-### Live2D Avatar
-- Cubism 4 SDK integration via WASM
-- Expression system (happy, sad, thinking, etc.)
-- Lip sync via Web Audio API analysis
-- Eye tracking and idle animations
-
-### Memory System
-- 7 memory types: identity, preference, skill, project, person, event, opinion
-- AI-powered extraction from conversations (30s idle trigger, 5 min interval)
-- TF-IDF weighted retrieval with keyword indexing
-- Jaccard similarity deduplication (60% threshold)
-- Decay-based importance scoring (identity never decays)
-- Shared across all sites via background script IndexedDB
-- Memory Browser in popup for viewing/managing memories
-
-### Proactive Memory
-- Yumi initiates conversations based on memories
-- Welcome back greetings after absence (1+ days)
-- Follow-up questions for events/projects with dates
-- Context matching (page keywords → relevant memories)
-- Random recall with importance-weighted selection
-- Floating bubble display when chat is closed
-- TTS support for spoken proactive messages
-- Activity history tab in Memory Browser
-- Configurable: cooldown, session limits, feature toggles
-
-### Page Context
-- Extracts current page content before each message
-- 4-level extraction (URL/title → full content → site-specific)
-- Privacy blacklist (banking, health, email sites)
-- Enables Yumi to see and discuss the current page
-
-### TTS (Text-to-Speech)
-- ElevenLabs WebSocket streaming (~300ms latency)
-- Integrated lip sync with avatar
-- Voice from companion personality (shared Hub key)
-
-### Companion System
-- Install companions from marketplace
-- Bundled 'yumi' as default fallback
-- IndexedDB storage for installed companions
-- SHA256 checksum verification
-
-### Web Search
-- Real-time web search via SearXNG meta-search engine
-- Auto-detects search intent ("what's the latest...", "current price of...")
-- Results formatted and injected into AI context
-- 5-minute cache with 100 entry limit
-
-## Storage
-
-| Storage | Data | Context |
-|---------|------|---------|
-| Chrome Storage | Settings, auth tokens, personality | Extension-wide |
-| IndexedDB `yumi-chat` | Messages, threads | Content script (per-origin) |
-| IndexedDB `yumi-memory` | Memories | Background script (shared) |
-| IndexedDB `yumi-companions` | Installed companions | Extension-wide |
-| Session Storage | Active scope, cleared flags | Per-tab |
-
-**Note**: Memories are stored in the background script's IndexedDB context and accessed via message passing (`MEMORY_GET_ALL`, `MEMORY_ADD`, etc.) to ensure they're shared across all sites.
-
-## Messaging
-
-Port-based streaming for persistent connections:
-
-```typescript
-const port = chrome.runtime.connect({ name: 'yumi-chat' })
-port.postMessage({ type: 'SEND_MESSAGE', payload: { text, scope } })
-// Response types: STREAM_CHUNK, STREAM_END, STREAM_ERROR
-```
-
-## Environment
-
-No `.env` file needed. All configuration is done through:
-- Extension popup settings (Hub activation, TTS keys)
-- Chrome Storage (persisted automatically)
+<p align="center">
+  Made with love by Yumi Labs
+</p>
