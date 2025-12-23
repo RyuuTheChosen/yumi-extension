@@ -116,12 +116,12 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
     log.log('Init check:', { enabled, ttsPluginReady, hubUrl: !!hubUrl })
 
     if (!enabled || !ttsPluginReady) {
-      log.log('[useTTS] TTS disabled or plugin not ready')
+      log.log('TTS disabled or plugin not ready')
       return
     }
 
     if (!hubUrl || !hubAccessToken) {
-      log.log('[useTTS] TTS enabled but not logged in to Hub')
+      log.log('TTS enabled but not logged in to Hub')
       return
     }
 

@@ -50,7 +50,7 @@ export async function classifyHttpError(
 ): Promise<YumiError> {
   let message = ''
   try {
-    const json = await res.clone().json().catch(() => undefined as any)
+    const json = await res.clone().json().catch(() => undefined)
     message = json?.error?.message || json?.message || JSON.stringify(json)
   } catch {
     try {

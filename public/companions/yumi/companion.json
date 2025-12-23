@@ -6,8 +6,9 @@
   "author": "Yumi Labs",
   "preview": "preview.png",
   "model": {
-    "entry": "model/model.model3.json",
-    "scale": 0.15,
+    "entry": "model/avatar.vrm",
+    "type": "vrm",
+    "scale": 1.0,
     "position": "bottom-right"
   },
   "personality": "personality.json",

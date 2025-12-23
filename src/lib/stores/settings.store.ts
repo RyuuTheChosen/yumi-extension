@@ -34,8 +34,8 @@ interface SettingsState {
   live2DModelUrl: string
   live2DScale: number
   // Model positioning within canvas (internal model adjustments)
-  modelOffsetX: number  // -1000 to 1000 pixels
-  modelOffsetY: number  // -1000 to 1000 pixels
+  modelOffsetX: number  // -2000 to 2000 pixels
+  modelOffsetY: number  // -2000 to 2000 pixels
   modelScaleMultiplier: number  // 0.5 to 10.0x additional scale
   // Active companion (slug of installed/bundled companion)
   activeCompanionSlug: string

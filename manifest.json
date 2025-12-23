@@ -19,7 +19,7 @@
     "https://*.koyeb.app/*"
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+    "extension_pages": "script-src 'self'; object-src 'self'"
   },
   "background": {
     "service_worker": "background.js",
@@ -41,8 +41,6 @@
         "<all_urls>"
       ],
       "js": [
-        "prelude.js",
-        "cubism-sdk/live2dcubismcore.min.js",
         "content.js"
       ],
       "run_at": "document_start",
@@ -53,9 +51,7 @@
     {
       "resources": [
         "icons/*",
-        "cubism-sdk/*",
         "companions/*",
-        "vendor/pixi-live2d/*",
         "style.css",
         "public/*"
       ],

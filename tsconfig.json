@@ -12,7 +12,11 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "strict": true,
-    "types": ["chrome", "react", "react-dom", "vitest"]
+    "types": ["chrome", "react", "react-dom", "vitest"],
+    "baseUrl": ".",
+    "paths": {
+      "@yumi/echo-avatar": ["../../packages/echo-avatar/src/index.ts"]
+    }
   },
   "include": ["src"]
 }

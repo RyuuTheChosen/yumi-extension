@@ -22,14 +22,14 @@ Yumi is a Chrome extension that adds an animated AI companion to any webpage. Sh
 
 ## Features
 
-### Animated Live2D Avatar
-A beautiful animated companion that reacts to conversations with expressions, eye tracking, and lip-synced speech.
+### Animated 3D Avatar
+A beautiful animated VRM companion that reacts to conversations with expressions, eye tracking, and lip-synced speech.
 
 ### Memory System
 Yumi remembers what you tell her - your preferences, projects, and past conversations. She recalls relevant information when you need it.
 
 ### Voice Chat
-Natural text-to-speech powered by ElevenLabs. Yumi speaks her responses with lip-synced animations.
+Natural text-to-speech powered by ElevenLabs (via Yumi Hub). Yumi speaks her responses with lip-synced 3D animations.
 
 ### Vision
 Yumi can see your screen. Right-click on any image or take a screenshot to discuss what you're looking at.

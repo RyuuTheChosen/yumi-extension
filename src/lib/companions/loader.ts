@@ -3,6 +3,7 @@ import {
   companionPersonalitySchema,
   type CompanionManifest,
   type CompanionPersonality,
+  type CompanionModelType,
   type LoadedCompanion,
 } from './types'
 import {
@@ -149,6 +150,16 @@ function getModelBaseDir(modelEntry: string): string {
 }
 
 /**
+ * Detect model type from entry file extension
+ * VRM files end in .vrm, Live2D models end in .model3.json
+ */
+function detectModelType(entry: string, explicitType?: CompanionModelType): CompanionModelType {
+  if (explicitType) return explicitType
+  if (entry.toLowerCase().endsWith('.vrm')) return 'vrm'
+  return 'live2d'
+}
+
+/**
  * Extract all file paths referenced in a model.json
  * Returns relative paths as they appear in FileReferences
  */
@@ -288,8 +299,51 @@ export async function loadBundledCompanion(companionId: string = BUNDLED_COMPANI
 }
 
 /**
+ * Load a VRM companion from IndexedDB (simpler than Live2D)
+ * VRM is a single file format - just need to get blob URL for the .vrm file
+ */
+async function loadVrmCompanion(slug: string, stored: StoredCompanion): Promise<LoadedCompanion | null> {
+  const modelEntry = stored.manifest.model.entry
+  const createdBlobUrls: string[] = []
+
+  const modelFileUrl = await getCompanionFileUrl(slug, modelEntry)
+  if (!modelFileUrl) {
+    log.log(`Missing VRM model file for installed companion: ${slug}, entry: ${modelEntry}`)
+    return null
+  }
+
+  const modelUrl = ensureBlobUrl(modelFileUrl)
+  if (modelUrl !== modelFileUrl) {
+    createdBlobUrls.push(modelUrl)
+  }
+
+  await markCompanionUsed(slug)
+
+  let previewUrl = ''
+  const previewFileUrl = await getCompanionFileUrl(slug, stored.manifest.preview)
+  if (previewFileUrl) {
+    previewUrl = ensureBlobUrl(previewFileUrl)
+    if (previewUrl !== previewFileUrl) {
+      createdBlobUrls.push(previewUrl)
+    }
+  }
+
+  trackBlobUrls(slug, createdBlobUrls)
+  log.log(`Loaded VRM companion: ${slug} with ${createdBlobUrls.length} blob URLs`)
+
+  return {
+    manifest: stored.manifest,
+    personality: stored.personality,
+    modelUrl,
+    previewUrl,
+    baseUrl: `indexeddb://${slug}`,
+  }
+}
+
+/**
  * Load an installed companion from IndexedDB
- * Pre-processes model files to convert data URLs to blob URLs for Live2D compatibility
+ * Pre-processes model files to convert data URLs to blob URLs
+ * VRM models are simpler (single file), Live2D requires path rewriting
  * Returns null if the companion is not installed or files are missing
  */
 export async function loadInstalledCompanion(slug: string): Promise<LoadedCompanion | null> {
@@ -305,6 +359,15 @@ export async function loadInstalledCompanion(slug: string): Promise<LoadedCompan
     log.log(`Found metadata for companion: ${slug}, version: ${stored.version}`)
 
     const modelEntry = stored.manifest.model.entry
+    const modelType = detectModelType(modelEntry, stored.manifest.model.type)
+    log.log(`Model type: ${modelType}`)
+
+    /** VRM models are simpler - single file, no path rewriting needed */
+    if (modelType === 'vrm') {
+      return loadVrmCompanion(slug, stored)
+    }
+
+    /** Live2D models require path extraction and rewriting */
     const modelBaseDir = getModelBaseDir(modelEntry)
 
     // Fetch model.json (returns blob URL in extension context, data URL in content script)
@@ -443,6 +506,24 @@ export async function getActiveCompanion(activeSlug?: string): Promise<LoadedCom
   if (installed) {
     log.log(`Loaded installed companion: ${slug}`)
     loadedCompanion = installed
+
+    /** Sync personality from Hub (with throttling + token refresh) */
+    const credentials = await getHubCredentials()
+    if (credentials) {
+      const syncResult = await syncCompanionFromHub(
+        slug,
+        credentials.hubUrl,
+        credentials.accessToken
+      )
+      /** If personality was updated, reload from IndexedDB */
+      if (syncResult.personalityChanged) {
+        const updated = await loadInstalledCompanion(slug)
+        if (updated) {
+          loadedCompanion = updated
+          log.log(`Reloaded companion with updated Hub personality: ${slug}`)
+        }
+      }
+    }
   } else if (slug === BUNDLED_COMPANION_ID) {
     /** Only fall back to bundled for 'yumi' slug */
     log.log(`No installed companion found, using bundled: ${slug}`)

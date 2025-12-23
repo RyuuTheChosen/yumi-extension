@@ -10,9 +10,13 @@ import { z } from 'zod'
  * - model/ (Live2D model files)
  */
 
-// Model configuration
+/** Model type: live2d (.model3.json) or vrm (.vrm) */
+export type CompanionModelType = 'live2d' | 'vrm'
+
+/** Model configuration */
 export const companionModelSchema = z.object({
-  entry: z.string(),  // Path to model.model3.json
+  entry: z.string(),
+  type: z.enum(['live2d', 'vrm']).default('live2d'),
   scale: z.number().default(0.15),
   position: z.enum(['bottom-right', 'bottom-left']).default('bottom-right'),
 })

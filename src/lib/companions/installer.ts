@@ -63,6 +63,7 @@ function getMimeType(filename: string): string {
     'model3': 'application/json',
     'physics3': 'application/json',
     'cdi3': 'application/json',
+    'vrm': 'model/gltf-binary',
   }
   return mimeTypes[ext || ''] || 'application/octet-stream'
 }

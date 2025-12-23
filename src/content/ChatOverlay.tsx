@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import ReactDOM from 'react-dom/client'
 import { motion, AnimatePresence } from 'framer-motion'
 import { createLogger } from '../lib/core/debug'
 import { CHAT } from '../lib/design/dimensions'
@@ -16,6 +17,7 @@ import { ChatHeader } from './components/ChatHeader'
 import { MessageBubble } from './components/MessageBubble'
 import { MessageInput, type MessageInputHandle } from './components/MessageInput'
 import { EmptyState } from './components/EmptyState'
+import { HydrationGate } from './components/HydrationGate'
 import { getThreadMessages } from './utils/db'
 import { setChatOpen } from './chatState'
 import {
@@ -261,6 +263,35 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
     currentScopeRef.current = currentScope
     sendMessageActionRef.current = sendMessageAction
   }, [status, connected, sendViaPort, currentScope, sendMessageAction])
+
+  /**
+   * Thinking animation state management
+   *
+   * Shows thinking animation while waiting for AI response.
+   * - Start: when status becomes 'sending' (waiting for response)
+   * - Stop: when status becomes 'streaming' (AI starts responding)
+   * - Stop: when status becomes 'idle' or 'error' (response complete/failed)
+   */
+  useEffect(() => {
+    const thinkingAPI = (window as any).__yumiThinking
+    if (!thinkingAPI) return
+
+    if (status === 'sending') {
+      thinkingAPI.start()
+    } else if (status === 'streaming' || status === 'idle' || status === 'error') {
+      thinkingAPI.stop()
+    }
+  }, [status])
+
+  /**
+   * Record user interactions to reset idle timer
+   */
+  useEffect(() => {
+    if (isExpanded) {
+      const emotionAPI = (window as any).__yumiEmotion
+      emotionAPI?.recordInteraction()
+    }
+  }, [isExpanded, displayMessages.length])
 
   /**
    * Core message sending function
@@ -663,5 +694,39 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
         </React.Suspense>
       )}
     </>
+  )
+}
+
+/**
+ * Mount the ChatOverlay into a shadow root
+ */
+export function mountChatOverlay(shadowRoot: ShadowRoot, chatButton?: HTMLButtonElement): void {
+  /** Trigger store rehydration from chrome.storage (required when skipHydration: true) */
+  useSettingsStore.persist.rehydrate()
+  usePersonalityStore.persist.rehydrate()
+
+  /** Inject stylesheet into shadow DOM (CSS doesn't penetrate shadow boundaries) */
+  const styleLink = document.createElement('link')
+  styleLink.rel = 'stylesheet'
+  styleLink.href = chrome.runtime.getURL('style.css')
+  shadowRoot.appendChild(styleLink)
+
+  /** Add Google Fonts for proper typography */
+  const fontLink = document.createElement('link')
+  fontLink.rel = 'stylesheet'
+  fontLink.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap'
+  shadowRoot.appendChild(fontLink)
+
+  const mountPoint = document.createElement('div')
+  mountPoint.id = 'yumi-chat-root'
+  shadowRoot.appendChild(mountPoint)
+
+  const root = ReactDOM.createRoot(mountPoint)
+  root.render(
+    <React.StrictMode>
+      <HydrationGate>
+        <ChatOverlay chatButton={chatButton} />
+      </HydrationGate>
+    </React.StrictMode>
   )
 }

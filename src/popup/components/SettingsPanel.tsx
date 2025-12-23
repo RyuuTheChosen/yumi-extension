@@ -583,34 +583,34 @@ export function SettingsPanel() {
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setModelOffsetX(Math.max(-1000, modelOffsetX - 10))}
+                    onClick={() => setModelOffsetX(Math.max(-2000, modelOffsetX - 10))}
                     className={cn(
                       "w-8 h-8 rounded flex items-center justify-center text-white/70",
                       "border border-white/20 hover:bg-white/10",
                       "disabled:opacity-50 disabled:cursor-not-allowed"
                     )}
-                    disabled={modelOffsetX <= -1000}
+                    disabled={modelOffsetX <= -2000}
                     title="Move left"
                   >
                     ←
                   </button>
                   <input
                     type="range"
-                    min={-1000}
-                    max={1000}
+                    min={-2000}
+                    max={2000}
                     step={10}
                     value={modelOffsetX}
                     onChange={(e) => setModelOffsetX(parseInt(e.target.value))}
                     className="flex-1 accent-white"
                   />
                   <button
-                    onClick={() => setModelOffsetX(Math.min(1000, modelOffsetX + 10))}
+                    onClick={() => setModelOffsetX(Math.min(2000, modelOffsetX + 10))}
                     className={cn(
                       "w-8 h-8 rounded flex items-center justify-center text-white/70",
                       "border border-white/20 hover:bg-white/10",
                       "disabled:opacity-50 disabled:cursor-not-allowed"
                     )}
-                    disabled={modelOffsetX >= 1000}
+                    disabled={modelOffsetX >= 2000}
                     title="Move right"
                   >
                     →
@@ -630,34 +630,34 @@ export function SettingsPanel() {
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setModelOffsetY(Math.max(-1000, modelOffsetY - 10))}
+                    onClick={() => setModelOffsetY(Math.max(-2000, modelOffsetY - 10))}
                     className={cn(
                       "w-8 h-8 rounded flex items-center justify-center text-white/70",
                       "border border-white/20 hover:bg-white/10",
                       "disabled:opacity-50 disabled:cursor-not-allowed"
                     )}
-                    disabled={modelOffsetY <= -1000}
+                    disabled={modelOffsetY <= -2000}
                     title="Move up"
                   >
                     ↑
                   </button>
                   <input
                     type="range"
-                    min={-1000}
-                    max={1000}
+                    min={-2000}
+                    max={2000}
                     step={10}
                     value={modelOffsetY}
                     onChange={(e) => setModelOffsetY(parseInt(e.target.value))}
                     className="flex-1 accent-white"
                   />
                   <button
-                    onClick={() => setModelOffsetY(Math.min(1000, modelOffsetY + 10))}
+                    onClick={() => setModelOffsetY(Math.min(2000, modelOffsetY + 10))}
                     className={cn(
                       "w-8 h-8 rounded flex items-center justify-center text-white/70",
                       "border border-white/20 hover:bg-white/10",
                       "disabled:opacity-50 disabled:cursor-not-allowed"
                     )}
-                    disabled={modelOffsetY >= 1000}
+                    disabled={modelOffsetY >= 2000}
                     title="Move down"
                   >
                     ↓

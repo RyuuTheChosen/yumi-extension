@@ -14,32 +14,30 @@ const log = createLogger('Content')
 registerBuiltinPlugins()
 log.log('Builtin plugins registered')
 
-// Lazy-loaded avatar module (300KB+ bundle only loaded when needed)
-let overlayModule: typeof import('./overlayAvatar') | null = null
+/** Lazy-loaded VRM avatar module (Three.js bundle only loaded when needed) */
+let overlayModule: typeof import('./overlayVrm') | null = null
 
 async function getOverlayModule() {
 	if (!overlayModule) {
-		log.log('Loading avatar bundle...')
-		overlayModule = await import('./overlayAvatar')
-		log.log('Avatar bundle loaded')
+		log.log('Loading VRM avatar bundle...')
+		overlayModule = await import('./overlayVrm')
+		log.log('VRM avatar bundle loaded')
 	}
 	return overlayModule
 }
 
-async function mountOverlay(config: Parameters<typeof import('./overlayAvatar').mountOverlay>[0]) {
+async function mountOverlay(config: Parameters<typeof import('./overlayVrm').mountOverlay>[0]) {
 	const mod = await getOverlayModule()
 	mod.mountOverlay(config)
 }
 
 async function unmountOverlay() {
-	// Only unmount if module was loaded (avoid loading just to unmount)
 	if (overlayModule) {
 		overlayModule.unmountOverlay()
 	}
 }
 
-function updateOverlayConfig(config: Parameters<typeof import('./overlayAvatar').updateOverlayConfig>[0]): boolean {
-	// Only update if module was loaded (sync check for lightweight updates)
+function updateOverlayConfig(config: Parameters<typeof import('./overlayVrm').updateOverlayConfig>[0]): boolean {
 	if (overlayModule) {
 		return overlayModule.updateOverlayConfig(config)
 	}
