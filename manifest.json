@@ -52,6 +52,7 @@
       "resources": [
         "icons/*",
         "companions/*",
+        "animations/*",
         "style.css",
         "public/*"
       ],

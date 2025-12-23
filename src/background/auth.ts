@@ -3,12 +3,26 @@
  *
  * Handles JWT token refresh and storage for Yumi Hub API.
  * Implements automatic token renewal when access tokens expire.
+ *
+ * SECURITY NOTES:
+ * - Tokens are stored in chrome.storage.local (encrypted by Chrome)
+ * - Access tokens are short-lived and auto-refreshed
+ * - Refresh tokens persist across sessions for "remember me" functionality
+ * - Token values are never logged to prevent credential leakage
+ * - Consider migrating access tokens to chrome.storage.session (MV3) for enhanced security
  */
 
 import { createLogger } from '../lib/core/debug'
 import type { HubUser, SettingsStateWithAuth } from '../types'
 
 const log = createLogger('Auth')
+
+/** Redact token for safe logging */
+function redactToken(token: string | null | undefined): string {
+  if (!token) return '[none]'
+  if (token.length < 10) return '[redacted]'
+  return `${token.substring(0, 4)}...${token.substring(token.length - 4)}`
+}
 
 /**
  * Persisted store structure (Zustand persist middleware wraps in 'state')
@@ -59,7 +73,7 @@ export async function tryRefreshHubToken(hubConfig: HubConfig): Promise<boolean>
       data.refreshToken,
       data.user || hubConfig.settingsStore?.state?.hubUser || null
     )
-    log.log('[Auth] Hub token refreshed successfully')
+    log.log(`[Auth] Hub token refreshed successfully (new token: ${redactToken(data.accessToken)})`)
     return true
   } catch (err) {
     log.error('[Auth] Hub refresh error:', err)
@@ -102,7 +116,7 @@ export async function updateHubAuth(
     }
 
     await chrome.storage.local.set({ 'settings-store': JSON.stringify(settingsStore) })
-    log.log('[Auth] Hub auth updated in storage')
+    log.log(`[Auth] Hub auth updated in storage (token: ${redactToken(accessToken)})`)
   } catch (err) {
     log.error('[Auth] Failed to update Hub auth in storage:', err)
     throw err

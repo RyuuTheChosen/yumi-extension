@@ -130,22 +130,30 @@ export function SettingsPanel() {
   async function loadCompanionOptions() {
     setLoadingCompanions(true)
     try {
-      // Start with bundled Yumi
-      const bundledPreviewUrl = chrome.runtime.getURL('companions/yumi/preview.png')
-      const options: CompanionOption[] = [
-        { slug: 'yumi', name: 'Yumi (Bundled)', isInstalled: false, previewUrl: bundledPreviewUrl }
+      /** List of bundled companions (shipped with extension) */
+      const BUNDLED_COMPANIONS = [
+        { slug: 'yumi', name: 'Yumi' },
+        { slug: 'miku', name: 'Hatsune Miku NT' },
       ]
 
-      // Add installed companions from IndexedDB
+      /** Build options starting with bundled companions */
+      const options: CompanionOption[] = BUNDLED_COMPANIONS.map(b => ({
+        slug: b.slug,
+        name: `${b.name} (Bundled)`,
+        isInstalled: false,
+        previewUrl: chrome.runtime.getURL(`companions/${b.slug}/preview.png`)
+      }))
+
+      /** Add/replace with installed companions from IndexedDB */
       const installed = await getInstalledCompanions()
       for (const c of installed) {
-        // Get preview URL for installed companion
         const previewUrl = await getCompanionFileUrl(c.slug, c.manifest.preview) || undefined
 
-        // Skip if it's Yumi (already have bundled)
-        if (c.slug === 'yumi') {
-          // Replace bundled with installed version
-          options[0] = { slug: 'yumi', name: 'Yumi (Installed)', isInstalled: true, previewUrl }
+        /** Check if this companion is already in bundled list */
+        const bundledIdx = options.findIndex(o => o.slug === c.slug)
+        if (bundledIdx >= 0) {
+          /** Replace bundled with installed version */
+          options[bundledIdx] = { slug: c.slug, name: `${c.manifest.name} (Installed)`, isInstalled: true, previewUrl }
         } else {
           options.push({
             slug: c.slug,

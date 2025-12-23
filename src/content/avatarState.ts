@@ -1,11 +1,12 @@
 /**
  * Avatar State Manager
  *
- * Centralizes avatar expression control to prevent conflicts from multiple event sources.
- * Uses a priority system: speaking > thinking > idle
+ * Tracks avatar state (speaking/thinking/idle) to coordinate multiple event sources.
+ * Uses reference counting for concurrent sources (e.g., chat TTS + proactive TTS).
  *
- * This solves the problem where useTTS, useProactiveMemory, and other sources
- * emit avatar events simultaneously, causing expression glitches.
+ * NOTE: This module only tracks STATE. Animation and expression control is handled
+ * by the event bridge in overlayVrm.ts which forwards events to EchoAvatar's
+ * AnimationTriggerService.
  */
 
 import { createLogger } from '../lib/core/debug'
@@ -23,68 +24,25 @@ let speakingCount = 0
 /** Track concurrent thinking sources */
 let thinkingCount = 0
 
-/** Timer for resetting to idle after speaking/thinking stops */
-let resetTimer: number | null = null
-
-/** Delay before resetting to idle (ms) */
-const RESET_DELAY_MS = 500
-
-/**
- * Apply an expression to the avatar model
- */
-function applyExpression(name: string): void {
-  const expr = (window as { __yumiExpression?: { set: (name: string) => void } }).__yumiExpression
-  if (expr) {
-    log.log(`Setting expression: ${name}`)
-    expr.set(name)
-  }
-}
-
-/**
- * Clear the reset timer if active
- */
-function clearResetTimer(): void {
-  if (resetTimer !== null) {
-    clearTimeout(resetTimer)
-    resetTimer = null
-  }
-}
-
-/**
- * Schedule a reset to idle state if no other activity
- */
-function maybeReturnToIdle(): void {
-  if (speakingCount > 0 || thinkingCount > 0) {
-    return
-  }
-
-  clearResetTimer()
-  resetTimer = window.setTimeout(() => {
-    currentState = 'idle'
-    applyExpression('neutral')
-    resetTimer = null
-  }, RESET_DELAY_MS)
-}
-
 /**
  * Set the avatar to speaking state.
  * Call with active=true when speaking starts, active=false when it ends.
  * Speaking has highest priority.
+ *
+ * NOTE: Animations and expressions are triggered by the event bridge, not here.
  */
 export function setAvatarSpeaking(active: boolean): void {
   log.log(`setAvatarSpeaking(${active}), count was ${speakingCount}`)
 
   if (active) {
     speakingCount++
-    clearResetTimer()
     if (currentState !== 'speaking') {
       currentState = 'speaking'
-      applyExpression('happy')
     }
   } else {
     speakingCount = Math.max(0, speakingCount - 1)
     if (speakingCount === 0) {
-      maybeReturnToIdle()
+      currentState = thinkingCount > 0 ? 'thinking' : 'idle'
     }
   }
 }
@@ -93,28 +51,27 @@ export function setAvatarSpeaking(active: boolean): void {
  * Set the avatar to thinking state.
  * Call with active=true when thinking starts, active=false when it ends.
  * Thinking is lower priority than speaking.
+ *
+ * NOTE: Animations and expressions are triggered by the event bridge, not here.
  */
 export function setAvatarThinking(active: boolean): void {
   log.log(`setAvatarThinking(${active}), count was ${thinkingCount}`)
 
   if (active) {
     thinkingCount++
-    clearResetTimer()
-    /** Only set thinking expression if not currently speaking */
     if (currentState === 'idle') {
       currentState = 'thinking'
-      applyExpression('thinking')
     }
   } else {
     thinkingCount = Math.max(0, thinkingCount - 1)
     if (thinkingCount === 0 && currentState === 'thinking') {
-      maybeReturnToIdle()
+      currentState = 'idle'
     }
   }
 }
 
 /**
- * Get current avatar state (for debugging)
+ * Get current avatar state (for debugging and coordination)
  */
 export function getAvatarState(): { state: AvatarState; speakingCount: number; thinkingCount: number } {
   return {
@@ -125,12 +82,24 @@ export function getAvatarState(): { state: AvatarState; speakingCount: number; t
 }
 
 /**
+ * Check if currently speaking
+ */
+export function isSpeaking(): boolean {
+  return speakingCount > 0
+}
+
+/**
+ * Check if currently thinking
+ */
+export function isThinking(): boolean {
+  return thinkingCount > 0
+}
+
+/**
  * Reset all avatar state (for cleanup)
  */
 export function resetAvatarState(): void {
-  clearResetTimer()
   currentState = 'idle'
   speakingCount = 0
   thinkingCount = 0
-  applyExpression('neutral')
 }

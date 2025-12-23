@@ -16,16 +16,24 @@ import { createLogger } from '../lib/core/debug'
 
 const log = createLogger('ExternalMessaging')
 
-// Allowed origins for external messaging
-const ALLOWED_ORIGINS = [
+/**
+ * Security: Allowed origins for external messaging.
+ * Production origins use strict matching.
+ * Development origins (localhost) only allowed when NODE_ENV !== 'production'.
+ */
+const PRODUCTION_ORIGINS = [
   'https://yumi.ai',
   'https://www.yumi.ai',
   'https://hub.yumi.ai',
   'https://yumi-pals.com',
   'https://www.yumi-pals.com',
-  'http://localhost',
-  'http://127.0.0.1',
 ]
+
+/** Allowed localhost ports for development */
+const DEV_LOCALHOST_PORTS = [3000, 3001, 5173, 5174, 8080]
+
+/** Check if we're in development mode */
+const IS_DEV = process.env.NODE_ENV !== 'production'
 
 // Message types from website
 type WebsiteMessageType =
@@ -101,15 +109,42 @@ type ExtensionResponse =
   | { type: 'YUMI_ERROR'; error: string }
 
 /**
- * Check if an origin is allowed
+ * Check if an origin is allowed using strict validation.
+ * Security: Uses exact matching for production, port-specific matching for localhost.
  */
 function isAllowedOrigin(origin: string): boolean {
-  return ALLOWED_ORIGINS.some(allowed => {
-    if (allowed.startsWith('http://localhost') || allowed.startsWith('http://127.0.0.1')) {
-      return origin.startsWith(allowed)
+  if (!origin || typeof origin !== 'string') return false
+
+  /** Check production origins - exact match only */
+  if (PRODUCTION_ORIGINS.includes(origin)) {
+    return true
+  }
+
+  /** Check localhost only in development mode */
+  if (IS_DEV) {
+    try {
+      const url = new URL(origin)
+      const host = url.hostname
+
+      /** Only allow specific localhost hosts */
+      if (host !== 'localhost' && host !== '127.0.0.1') {
+        return false
+      }
+
+      /** Require specific allowed ports */
+      const port = url.port ? parseInt(url.port, 10) : (url.protocol === 'https:' ? 443 : 80)
+      if (!DEV_LOCALHOST_PORTS.includes(port)) {
+        log.warn(`Rejected localhost origin with non-whitelisted port: ${origin}`)
+        return false
+      }
+
+      return true
+    } catch {
+      return false
     }
-    return origin === allowed || origin.endsWith(allowed.replace('https://', '.'))
-  })
+  }
+
+  return false
 }
 
 /**

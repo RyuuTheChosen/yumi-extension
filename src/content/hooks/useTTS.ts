@@ -66,6 +66,23 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
   const [ttsPluginReady, setTtsPluginReady] = useState(() => isPluginActive('tts'))
 
   /**
+   * Subscribe to ttsService events and forward to extension bus.
+   * This bridges non-streaming TTS events to the animation system.
+   */
+  useEffect(() => {
+    const unsubscribe = ttsService.on((event) => {
+      if (event.type === 'speaking:start') {
+        log.log('ttsService speaking:start, forwarding to bus')
+        bus.emit('avatar', { type: 'speaking:start', source: 'ttsService' })
+      } else if (event.type === 'speaking:end' || event.type === 'speaking:error') {
+        log.log(`ttsService ${event.type}, forwarding as speaking:stop to bus`)
+        bus.emit('avatar', { type: 'speaking:stop', source: 'ttsService' })
+      }
+    })
+    return unsubscribe
+  }, [])
+
+  /**
    * Subscribe to plugin loading to handle race condition where
    * ChatOverlay mounts before plugins are loaded.
    * Always register listener for future plugin reloads (companion changes).

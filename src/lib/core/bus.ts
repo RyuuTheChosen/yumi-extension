@@ -5,8 +5,8 @@ import type { YumiError } from './errors'
 export type AvatarEvent =
   | { type: 'thinking:start' }
   | { type: 'thinking:stop' }
-  | { type: 'speaking:start' }
-  | { type: 'speaking:stop' }
+  | { type: 'speaking:start'; source?: string }
+  | { type: 'speaking:stop'; source?: string }
 
 // Page context for proactive system
 export interface PageReadyContext {

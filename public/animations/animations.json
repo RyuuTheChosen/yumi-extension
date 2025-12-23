@@ -1,0 +1,72 @@
+{
+  "version": "1.0.0",
+  "animations": [
+    {
+      "id": "standing_idle",
+      "path": "idle_standing.fbx",
+      "loop": true,
+      "speed": 1.0,
+      "fadeIn": 0.5,
+      "fadeOut": 0.5,
+      "tags": ["idle"]
+    },
+    {
+      "id": "talking_1",
+      "path": "talking_1.fbx",
+      "loop": true,
+      "speed": 1.0,
+      "fadeIn": 0.3,
+      "fadeOut": 0.3,
+      "tags": ["talking"]
+    },
+    {
+      "id": "talking_2",
+      "path": "talking_2.fbx",
+      "loop": true,
+      "speed": 1.0,
+      "fadeIn": 0.3,
+      "fadeOut": 0.3,
+      "tags": ["talking"]
+    },
+    {
+      "id": "talking_3",
+      "path": "talking_3.fbx",
+      "loop": true,
+      "speed": 1.0,
+      "fadeIn": 0.3,
+      "fadeOut": 0.3,
+      "tags": ["talking"]
+    },
+    {
+      "id": "dancing",
+      "path": "dance_dancing.fbx",
+      "loop": true,
+      "speed": 1.0,
+      "fadeIn": 0.3,
+      "fadeOut": 0.3,
+      "expressionHint": "happy",
+      "expressionIntensity": 0.8,
+      "tags": ["dance", "happy"]
+    }
+  ],
+  "triggers": [
+    {
+      "trigger": "onIdle",
+      "animations": ["standing_idle"],
+      "weight": 1,
+      "cooldown": 0
+    },
+    {
+      "trigger": "onTalking",
+      "animations": ["talking_1", "talking_2", "talking_3"],
+      "weight": 1,
+      "cooldown": 0
+    },
+    {
+      "trigger": "onHappy",
+      "animations": ["dancing"],
+      "weight": 1,
+      "cooldown": 10
+    }
+  ]
+}

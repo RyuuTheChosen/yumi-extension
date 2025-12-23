@@ -1,0 +1,22 @@
+{
+  "id": "miku",
+  "name": "Hatsune Miku NT",
+  "version": "1.0.0",
+  "description": "Hatsune Miku NT VRM avatar by Tomaru",
+  "author": "Tomaru",
+  "preview": "preview.png",
+  "model": {
+    "entry": "model/HatsuneMikuNT.vrm",
+    "type": "vrm",
+    "scale": 1.0,
+    "position": "bottom-right"
+  },
+  "personality": "personality.json",
+  "tags": [
+    "vocaloid",
+    "miku",
+    "vtuber"
+  ],
+  "createdAt": "2025-12-23",
+  "updatedAt": "2025-12-23"
+}

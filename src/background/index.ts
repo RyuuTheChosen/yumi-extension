@@ -5,6 +5,7 @@
  * Handles Chrome extension lifecycle and routes messages to appropriate handlers.
  */
 
+import { z } from 'zod'
 import { createLogger } from '../lib/core/debug'
 import { setupExternalMessaging } from './externalMessaging'
 import { initializeContextMenus, setupContextMenuHandlers } from './contextMenu'
@@ -31,6 +32,78 @@ import {
 import type { RuntimeMessage } from '../types'
 
 const log = createLogger('Background')
+
+/** Memory type enum matching types.ts */
+const MemoryTypeSchema = z.enum(['identity', 'preference', 'skill', 'project', 'person', 'event', 'opinion'])
+
+/** Memory source schema matching types.ts */
+const MemorySourceSchema = z.object({
+  conversationId: z.string(),
+  messageId: z.string(),
+  url: z.string().optional(),
+  timestamp: z.number()
+})
+
+/** Full Memory schema matching types.ts Memory interface */
+const MemorySchema = z.object({
+  id: z.string(),
+  type: MemoryTypeSchema,
+  content: z.string().min(1).max(10000),
+  context: z.string().optional(),
+  source: MemorySourceSchema,
+  importance: z.number().min(0).max(1),
+  confidence: z.number().min(0).max(1),
+  lastAccessed: z.number(),
+  accessCount: z.number(),
+  createdAt: z.number(),
+  expiresAt: z.number().optional()
+})
+
+/**
+ * Zod schemas for message payload validation
+ * Security: Validates external input to prevent injection attacks
+ */
+const MessagePayloadSchemas = {
+  FETCH_IMAGE: z.object({
+    url: z.string().url()
+  }),
+  MEMORY_ADD: z.object({
+    memory: MemorySchema
+  }),
+  MEMORY_ADD_BATCH: z.object({
+    memories: z.array(MemorySchema)
+  }),
+  MEMORY_DELETE: z.object({
+    id: z.string().min(1)
+  }),
+  COMPANION_GET_METADATA: z.object({
+    slug: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/)
+  }),
+  COMPANION_GET_FILE_URL: z.object({
+    slug: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/),
+    filePath: z.string().min(1).max(500)
+  }),
+  COMPANION_MARK_USED: z.object({
+    slug: z.string().min(1).max(100).regex(/^[a-zA-Z0-9_-]+$/)
+  }),
+  SEARCH_REQUEST: z.object({
+    query: z.string().min(1).max(1000)
+  })
+}
+
+/** Safe payload parser with logging */
+function parsePayload<T extends keyof typeof MessagePayloadSchemas>(
+  type: T,
+  payload: unknown
+): z.infer<typeof MessagePayloadSchemas[T]> | null {
+  const schema = MessagePayloadSchemas[type]
+  const result = schema.safeParse(payload)
+  if (!result.success) {
+    log.warn(`[Background] Invalid payload for ${type}:`, result.error.issues)
+    return null
+  }
+  return result.data
+}
 
 /**
  * Register all builtin plugins with the registry
@@ -95,16 +168,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'FETCH_IMAGE') {
     (async () => {
       try {
-        const { url } = msg.payload || {}
-        if (!url) {
+        const payload = parsePayload('FETCH_IMAGE', msg.payload)
+        if (!payload) {
           safeSendMessage({
             type: 'FETCH_IMAGE_RESULT',
-            payload: { success: false, error: 'No URL provided' }
+            payload: { success: false, error: 'Invalid or missing URL' }
           })
           return
         }
 
-        const response = await fetch(url)
+        const response = await fetch(payload.url)
         if (!response.ok) {
           safeSendMessage({
             type: 'FETCH_IMAGE_RESULT',
@@ -210,7 +283,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'MEMORY_ADD') {
     (async () => {
       try {
-        await saveMemory(msg.payload.memory)
+        const payload = parsePayload('MEMORY_ADD', msg.payload)
+        if (!payload) {
+          sendResponse({ success: false, error: 'Invalid memory payload' })
+          return
+        }
+        await saveMemory(payload.memory)
         sendResponse({ success: true })
       } catch (err) {
         log.error('Failed to save memory:', err)
@@ -226,7 +304,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'MEMORY_ADD_BATCH') {
     (async () => {
       try {
-        await saveMemories(msg.payload.memories)
+        const payload = parsePayload('MEMORY_ADD_BATCH', msg.payload)
+        if (!payload) {
+          sendResponse({ success: false, error: 'Invalid memories payload' })
+          return
+        }
+        await saveMemories(payload.memories)
         sendResponse({ success: true })
       } catch (err) {
         log.error('Failed to save memories:', err)
@@ -242,7 +325,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'MEMORY_DELETE') {
     (async () => {
       try {
-        await deleteMemory(msg.payload.id)
+        const payload = parsePayload('MEMORY_DELETE', msg.payload)
+        if (!payload) {
+          sendResponse({ success: false, error: 'Invalid memory ID' })
+          return
+        }
+        await deleteMemory(payload.id)
         sendResponse({ success: true })
       } catch (err) {
         log.error('Failed to delete memory:', err)
@@ -273,7 +361,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
    */
   if (msg.type === 'SEARCH_REQUEST') {
     (async () => {
-      const response = await handleSearchRequest(msg.payload)
+      const payload = parsePayload('SEARCH_REQUEST', msg.payload)
+      if (!payload) {
+        sendResponse({ success: false, error: 'Invalid search query' })
+        return
+      }
+      const response = await handleSearchRequest(payload)
       sendResponse(response)
     })()
     return true
@@ -285,8 +378,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'COMPANION_GET_METADATA') {
     (async () => {
       try {
-        const { slug } = msg.payload || {}
-        const metadata = await getCompanionMetadata(slug)
+        const payload = parsePayload('COMPANION_GET_METADATA', msg.payload)
+        if (!payload) {
+          sendResponse({ success: false, error: 'Invalid companion slug' })
+          return
+        }
+        const metadata = await getCompanionMetadata(payload.slug)
         sendResponse({ success: true, metadata })
       } catch (err) {
         log.error('Failed to get companion metadata:', err)
@@ -302,8 +399,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'COMPANION_GET_FILE_URL') {
     (async () => {
       try {
-        const { slug, filePath } = msg.payload || {}
-        const url = await getCompanionFileAsDataUrl(slug, filePath)
+        const payload = parsePayload('COMPANION_GET_FILE_URL', msg.payload)
+        if (!payload) {
+          sendResponse({ success: false, error: 'Invalid companion file request' })
+          return
+        }
+        const url = await getCompanionFileAsDataUrl(payload.slug, payload.filePath)
         sendResponse({ success: true, url })
       } catch (err) {
         log.error('Failed to get companion file URL:', err)
@@ -319,8 +420,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg.type === 'COMPANION_MARK_USED') {
     (async () => {
       try {
-        const { slug } = msg.payload || {}
-        await markCompanionUsed(slug)
+        const payload = parsePayload('COMPANION_MARK_USED', msg.payload)
+        if (!payload) {
+          sendResponse({ success: false, error: 'Invalid companion slug' })
+          return
+        }
+        await markCompanionUsed(payload.slug)
         sendResponse({ success: true })
       } catch (err) {
         log.error('Failed to mark companion used:', err)

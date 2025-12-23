@@ -1,8 +1,10 @@
 import {
   companionManifestSchema,
   companionPersonalitySchema,
+  companionAnimationsSchema,
   type CompanionManifest,
   type CompanionPersonality,
+  type CompanionAnimations,
   type CompanionModelType,
   type LoadedCompanion,
 } from './types'
@@ -242,15 +244,8 @@ function rewriteModelPaths(modelJson: any, blobUrlMap: Map<string, string>): any
 
   if (refs.Expressions) {
     for (const expr of refs.Expressions) {
-      console.log(`[REWRITE] Expression "${expr.Name}" path: "${expr.File}"`)
-      console.log(`[REWRITE] Map has key: ${blobUrlMap.has(expr.File)}`)
       if (expr.File && blobUrlMap.has(expr.File)) {
-        const blobUrl = blobUrlMap.get(expr.File)
-        console.log(`[REWRITE] -> Rewritten to blob URL: ${blobUrl?.substring(0, 60)}...`)
-        expr.File = blobUrl
-      } else {
-        console.log(`[REWRITE] -> NOT FOUND IN MAP`)
-        console.log(`[REWRITE] Available keys:`, [...blobUrlMap.keys()].filter(k => k.includes('exp') || k.includes('Exp')))
+        expr.File = blobUrlMap.get(expr.File)
       }
     }
   }
@@ -289,12 +284,17 @@ export async function loadBundledCompanion(companionId: string = BUNDLED_COMPANI
   const personalityJson = await personalityRes.json()
   const personality = companionPersonalitySchema.parse(personalityJson)
 
+  // Try to load animations config
+  const animationsResult = await loadCompanionAnimations(baseUrl, companionId)
+
   return {
     manifest,
     personality,
     modelUrl: `${baseUrl}/${manifest.model.entry}`,
     previewUrl: `${baseUrl}/${manifest.preview}`,
     baseUrl,
+    animations: animationsResult?.animations,
+    animationsBaseUrl: animationsResult?.animationsBaseUrl,
   }
 }
 
@@ -478,15 +478,12 @@ export async function loadInstalledCompanion(slug: string): Promise<LoadedCompan
 export async function getActiveCompanion(activeSlug?: string): Promise<LoadedCompanion> {
   const slug = activeSlug || BUNDLED_COMPANION_ID
 
-  console.log(`[getActiveCompanion] Called with slug="${slug}", cachedSlug="${cachedCompanionSlug}", hasCached=${!!cachedCompanion}`)
-
   /** Return cached companion if same slug (avoids redundant blob URL creation) */
   if (cachedCompanion && cachedCompanionSlug === slug) {
-    console.log(`[getActiveCompanion] CACHE HIT - returning cached companion: ${slug}`)
     return cachedCompanion
   }
 
-  console.log(`[getActiveCompanion] CACHE MISS - loading companion: ${slug}`)
+  log.log(`Loading companion: ${slug}`)
 
   /** Clean up blob URLs from previous companion if switching */
   if (currentCompanionSlug && currentCompanionSlug !== slug) {
@@ -524,10 +521,18 @@ export async function getActiveCompanion(activeSlug?: string): Promise<LoadedCom
         }
       }
     }
-  } else if (slug === BUNDLED_COMPANION_ID) {
-    /** Only fall back to bundled for 'yumi' slug */
-    log.log(`No installed companion found, using bundled: ${slug}`)
-    loadedCompanion = await loadBundledCompanion(BUNDLED_COMPANION_ID)
+  } else {
+    /** Not found in IndexedDB - try loading as bundled companion */
+    log.log(`No installed companion found for ${slug}, trying bundled...`)
+
+    try {
+      loadedCompanion = await loadBundledCompanion(slug)
+      log.log(`Loaded bundled companion: ${slug}`)
+    } catch {
+      /** Bundled companion doesn't exist - fall back to yumi */
+      log.warn(`Bundled companion ${slug} not found, falling back to yumi`)
+      loadedCompanion = await loadBundledCompanion(BUNDLED_COMPANION_ID)
+    }
 
     /** Try to get Hub personality for capabilities (plugins, etc.) */
     const credentials = await getHubCredentials()
@@ -545,18 +550,12 @@ export async function getActiveCompanion(activeSlug?: string): Promise<LoadedCom
         }
       }
     }
-  } else {
-    /** Non-yumi companion not found - fall back to bundled yumi */
-    log.warn(`Installed companion ${slug} not found, falling back to bundled yumi`)
-    loadedCompanion = await loadBundledCompanion(BUNDLED_COMPANION_ID)
   }
 
   /** Track the new companion slug and cache the result */
   currentCompanionSlug = loadedCompanion.manifest.id
   cachedCompanion = loadedCompanion
   cachedCompanionSlug = slug
-
-  console.log(`[getActiveCompanion] SET CACHE: slug="${slug}", manifest.id="${loadedCompanion.manifest.id}"`)
 
   return loadedCompanion
 }
@@ -592,6 +591,42 @@ export async function companionExists(companionId: string): Promise<boolean> {
  */
 export function getDefaultCompanionId(): string {
   return BUNDLED_COMPANION_ID
+}
+
+/**
+ * Load companion animations configuration from animations/animations.json
+ * Returns null if no animations are configured for this companion
+ */
+export async function loadCompanionAnimations(
+  baseUrl: string,
+  slug: string
+): Promise<{ animations: CompanionAnimations; animationsBaseUrl: string } | null> {
+  try {
+    const animationsJsonUrl = `${baseUrl}/animations/animations.json`
+    const response = await fetch(animationsJsonUrl)
+
+    if (!response.ok) {
+      log.log(`No animations.json found for ${slug} (${response.status})`)
+      return null
+    }
+
+    const animationsJson = await response.json()
+    const animations = companionAnimationsSchema.parse(animationsJson)
+
+    log.log(`Loaded animations config for ${slug}: ${animations.animations.length} animations, ${animations.triggers.length} triggers`)
+
+    return {
+      animations,
+      animationsBaseUrl: `${baseUrl}/animations`,
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('Failed to fetch')) {
+      log.log(`No animations folder found for ${slug}`)
+    } else {
+      log.warn(`Failed to load animations for ${slug}:`, error)
+    }
+    return null
+  }
 }
 
 /**
