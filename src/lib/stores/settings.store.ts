@@ -458,6 +458,18 @@ export const useSettingsStore = create<SettingsState>()(
               const hasLive2D = typeof state.enableLive2D === 'boolean'
               const hasHubUrl = typeof state.hubUrl === 'string'
               log.log('State validation:', { hasModel, hasLive2D, hasHubUrl })
+
+              /** Load access token from secure storage */
+              chrome.runtime.sendMessage({ type: 'GET_ACCESS_TOKEN' })
+                .then((response) => {
+                  if (response?.success && response.token) {
+                    log.log('Loaded access token from secure storage')
+                    useSettingsStore.setState({ hubAccessToken: response.token })
+                  }
+                })
+                .catch(() => {
+                  log.warn('Failed to load access token from secure storage')
+                })
             }
           }
         }
