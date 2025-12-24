@@ -134,18 +134,36 @@ export const useSettingsStore = create<SettingsState>()(
       setActiveCompanionSlug: (slug) => set({ activeCompanionSlug: slug }),
       // Hub actions
       setHubUrl: (url) => set({ hubUrl: url }),
-      setHubAuth: (accessToken, refreshToken, user, quota) => set({
-        hubAccessToken: accessToken,
-        hubRefreshToken: refreshToken,
-        hubUser: user,
-        hubQuota: quota
-      }),
-      clearHubAuth: () => set({
-        hubAccessToken: null,
-        hubRefreshToken: null,
-        hubUser: null,
-        hubQuota: null
-      }),
+      setHubAuth: (accessToken, refreshToken, user, quota) => {
+        /** Store tokens securely via background script */
+        chrome.runtime.sendMessage({
+          type: 'SET_HUB_AUTH',
+          payload: { accessToken, refreshToken }
+        }).catch(() => {
+          log.error('Failed to store tokens securely')
+        })
+        /** Also keep in memory for UI */
+        set({
+          hubAccessToken: accessToken,
+          hubRefreshToken: refreshToken,
+          hubUser: user,
+          hubQuota: quota
+        })
+      },
+      clearHubAuth: () => {
+        /** Clear tokens from secure storage via background script */
+        chrome.runtime.sendMessage({
+          type: 'CLEAR_HUB_AUTH'
+        }).catch(() => {
+          log.error('Failed to clear tokens from secure storage')
+        })
+        set({
+          hubAccessToken: null,
+          hubRefreshToken: null,
+          hubUser: null,
+          hubQuota: null
+        })
+      },
       refreshHubQuota: async () => {
         const { hubUrl, hubAccessToken, hubUser } = get()
         if (!hubAccessToken) return

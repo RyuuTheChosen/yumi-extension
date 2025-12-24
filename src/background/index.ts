@@ -13,7 +13,7 @@ import { initializePortHandlers } from './portManager'
 import { handleMemoryExtraction } from './memory'
 import { handleEmbeddingGeneration } from './embedding'
 import { handleSearchRequest } from './search'
-import { migrateTokensToSecureStorage, getAccessToken, tryRefreshHubToken } from './auth'
+import { migrateTokensToSecureStorage, getAccessToken, tryRefreshHubToken, setAccessToken, setRefreshToken } from './auth'
 import { AUDIO, MEMORY } from '../lib/config/constants'
 import { getErrorMessage } from '../lib/core/errors'
 import { registerBuiltinPlugins } from '../lib/plugins/builtin'
@@ -422,6 +422,47 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           success: false,
           error: getErrorMessage(err, 'Failed to capture screenshot')
         })
+      }
+    })()
+    return true
+  }
+
+  /**
+   * SET_HUB_AUTH - Store tokens in secure storage after login
+   */
+  if (msg.type === 'SET_HUB_AUTH') {
+    (async () => {
+      try {
+        const { accessToken, refreshToken } = msg.payload || {}
+        if (accessToken) {
+          await setAccessToken(accessToken)
+        }
+        if (refreshToken) {
+          await setRefreshToken(refreshToken)
+        }
+        log.log('[Background] Tokens stored securely')
+        sendResponse({ success: true })
+      } catch (err) {
+        log.error('[Background] Failed to store tokens:', err)
+        sendResponse({ success: false, error: getErrorMessage(err) })
+      }
+    })()
+    return true
+  }
+
+  /**
+   * CLEAR_HUB_AUTH - Clear tokens from secure storage on logout
+   */
+  if (msg.type === 'CLEAR_HUB_AUTH') {
+    (async () => {
+      try {
+        await setAccessToken(null)
+        await setRefreshToken(null)
+        log.log('[Background] Tokens cleared from secure storage')
+        sendResponse({ success: true })
+      } catch (err) {
+        log.error('[Background] Failed to clear tokens:', err)
+        sendResponse({ success: false, error: getErrorMessage(err) })
       }
     })()
     return true

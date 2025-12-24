@@ -44,7 +44,7 @@ export async function getAccessToken(): Promise<string | null> {
 /**
  * Store access token in session storage
  */
-async function setAccessToken(token: string | null): Promise<void> {
+export async function setAccessToken(token: string | null): Promise<void> {
   try {
     if (token) {
       await chrome.storage.session.set({ [ACCESS_TOKEN_KEY]: token })
@@ -74,7 +74,7 @@ export async function getRefreshToken(): Promise<string | null> {
 /**
  * Encrypt and store refresh token in local storage
  */
-async function setRefreshToken(token: string | null): Promise<void> {
+export async function setRefreshToken(token: string | null): Promise<void> {
   try {
     if (token) {
       const encrypted = await encryptApiKey(token)
