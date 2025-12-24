@@ -13,7 +13,7 @@ import { initializePortHandlers } from './portManager'
 import { handleMemoryExtraction } from './memory'
 import { handleEmbeddingGeneration } from './embedding'
 import { handleSearchRequest } from './search'
-import { migrateTokensToSecureStorage } from './auth'
+import { migrateTokensToSecureStorage, getAccessToken, tryRefreshHubToken } from './auth'
 import { AUDIO, MEMORY } from '../lib/config/constants'
 import { getErrorMessage } from '../lib/core/errors'
 import { registerBuiltinPlugins } from '../lib/plugins/builtin'
@@ -77,7 +77,9 @@ const SENSITIVE_MESSAGE_TYPES = [
   'SUMMARY_GET',
   'SUMMARY_GET_ALL',
   'SUMMARY_GET_FOR_MEMORIES',
-  'SUMMARY_SAVE'
+  'SUMMARY_SAVE',
+  'GET_ACCESS_TOKEN',
+  'REFRESH_ACCESS_TOKEN'
 ] as const
 
 /**
@@ -420,6 +422,59 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           success: false,
           error: getErrorMessage(err, 'Failed to capture screenshot')
         })
+      }
+    })()
+    return true
+  }
+
+  /**
+   * GET_ACCESS_TOKEN - Get access token from session storage
+   * SECURITY: Only returns token to content scripts from same extension
+   */
+  if (msg.type === 'GET_ACCESS_TOKEN') {
+    (async () => {
+      try {
+        const token = await getAccessToken()
+        sendResponse({ success: true, token })
+      } catch (err) {
+        log.error('[Background] Failed to get access token:', err)
+        sendResponse({ success: false, error: getErrorMessage(err) })
+      }
+    })()
+    return true
+  }
+
+  /**
+   * REFRESH_ACCESS_TOKEN - Refresh the access token using stored refresh token
+   * SECURITY: Only returns token to content scripts from same extension
+   */
+  if (msg.type === 'REFRESH_ACCESS_TOKEN') {
+    (async () => {
+      try {
+        const settingsData = await chrome.storage.local.get('settings-store')
+        let hubUrl = ''
+        if (settingsData?.['settings-store']) {
+          const parsed = typeof settingsData['settings-store'] === 'string'
+            ? JSON.parse(settingsData['settings-store'])
+            : settingsData['settings-store']
+          hubUrl = parsed?.state?.hubUrl || ''
+        }
+
+        if (!hubUrl) {
+          sendResponse({ success: false, error: 'No Hub URL configured' })
+          return
+        }
+
+        const refreshed = await tryRefreshHubToken({ hubUrl })
+        if (refreshed) {
+          const newToken = await getAccessToken()
+          sendResponse({ success: true, token: newToken })
+        } else {
+          sendResponse({ success: false, error: 'Token refresh failed' })
+        }
+      } catch (err) {
+        log.error('[Background] Failed to refresh access token:', err)
+        sendResponse({ success: false, error: getErrorMessage(err) })
       }
     })()
     return true

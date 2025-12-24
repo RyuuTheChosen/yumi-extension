@@ -14,40 +14,18 @@ const log = createLogger('TTS')
 
 /**
  * Refresh the access token using the stored refresh token.
- * Updates the settings store with new tokens.
+ * Communicates with background script which handles secure token storage.
  * Returns the new access token or null if refresh failed.
  */
 export async function refreshAccessToken(): Promise<string | null> {
-  const { hubUrl, hubRefreshToken, setHubAuth, hubUser, hubQuota, clearHubAuth } = useSettingsStore.getState()
-
-  if (!hubRefreshToken) {
-    log.warn('No refresh token available')
-    return null
-  }
-
   try {
-    const response = await fetch(`${hubUrl}/auth/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken: hubRefreshToken }),
-    })
-
-    if (!response.ok) {
-      log.error('Token refresh failed:', response.status)
-      if (response.status === 401) {
-        clearHubAuth()
-      }
-      return null
+    const response = await chrome.runtime.sendMessage({ type: 'REFRESH_ACCESS_TOKEN' })
+    if (response?.success && response.token) {
+      log.log('Token refreshed successfully')
+      return response.token
     }
-
-    const data = await response.json()
-
-    if (hubUser && hubQuota) {
-      setHubAuth(data.accessToken, data.refreshToken, hubUser, hubQuota)
-    }
-
-    log.log('Token refreshed successfully')
-    return data.accessToken
+    log.error('Token refresh failed:', response?.error || 'Unknown error')
+    return null
   } catch (err) {
     log.error('Token refresh error:', err)
     return null

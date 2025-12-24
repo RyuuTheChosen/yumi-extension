@@ -289,8 +289,22 @@ export function useTTS(options: UseTTSOptions): UseTTSReturn {
 
       ttsCoordinator.stopAll()
 
-      /** Get current token from store (may be fresher than hook prop) */
-      let currentToken = useSettingsStore.getState().hubAccessToken || hubAccessToken
+      /** Get current token from background (stored in session storage) */
+      let currentToken: string | null = null
+      try {
+        const response = await chrome.runtime.sendMessage({ type: 'GET_ACCESS_TOKEN' })
+        if (response?.success && response.token) {
+          currentToken = response.token
+        }
+      } catch {
+        log.warn('Failed to get access token from background')
+      }
+
+      if (!currentToken) {
+        log.error('No access token available for TTS')
+        streamingTtsFailedRef.current = true
+        return
+      }
 
       streamingTtsRef.current = new StreamingTTSService(hubUrl, currentToken, {
         enabled: true,

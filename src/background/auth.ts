@@ -156,9 +156,12 @@ interface PersistedStore<T> {
  */
 export interface HubConfig {
   hubUrl: string
-  hubAccessToken: string
-  hubRefreshToken: string | null
-  settingsStore: PersistedStore<SettingsStateWithAuth>
+  /** @deprecated Tokens now stored securely, not passed in config */
+  hubAccessToken?: string
+  /** @deprecated Tokens now stored securely, not passed in config */
+  hubRefreshToken?: string | null
+  /** @deprecated User data obtained from refresh response */
+  settingsStore?: PersistedStore<SettingsStateWithAuth>
 }
 
 /**
