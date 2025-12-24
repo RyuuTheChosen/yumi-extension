@@ -53,6 +53,7 @@ export type StreamingTTSOutMessage =
 
 // Streaming TTS message types (Hub WebSocket -> extension)
 export type StreamingTTSInMessage =
+  | { type: 'auth_success' }
   | { type: 'ready' }
   | { type: 'audio'; audio: string } // base64 encoded
   | { type: 'done' }

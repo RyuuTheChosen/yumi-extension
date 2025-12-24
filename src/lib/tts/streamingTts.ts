@@ -167,16 +167,8 @@ export class StreamingTTSService {
           return
         }
 
-        /** Send auth as first message before any other communication */
+        /** Send auth as first message, wait for auth_success before init */
         this.ws!.send(JSON.stringify({ type: 'auth', token: this.accessToken }))
-
-        /** Send init message */
-        const initMsg: StreamingTTSOutMessage = {
-          type: 'init',
-          voiceId: this.settings.voice,
-          speed: this.settings.speed,
-        }
-        this.ws!.send(JSON.stringify(initMsg))
       }
 
       this.ws.onmessage = (event) => {
@@ -210,6 +202,19 @@ export class StreamingTTSService {
     connectResolve?: (value: boolean) => void
   ): void {
     switch (message.type) {
+      case 'auth_success':
+        log.log('Authenticated, sending init')
+        /** Now send init message after successful auth */
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+          const initMsg: StreamingTTSOutMessage = {
+            type: 'init',
+            voiceId: this.settings.voice,
+            speed: this.settings.speed,
+          }
+          this.ws.send(JSON.stringify(initMsg))
+        }
+        break
+
       case 'ready':
         log.log('Ready to stream')
         this.setState('connected')
