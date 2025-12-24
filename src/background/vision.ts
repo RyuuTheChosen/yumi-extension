@@ -9,7 +9,7 @@ import { createLogger } from '../lib/core/debug'
 import { buildSingleStageVisionPrompt, VISION_UX_MESSAGES } from '../lib/prompts/vision'
 import { API, SAMPLING, MODELS } from '../lib/config/constants'
 import { getErrorMessage } from '../lib/core/errors'
-import { tryRefreshHubToken, type HubConfig } from './auth'
+import { tryRefreshHubToken, getAccessToken, getRefreshToken, type HubConfig } from './auth'
 import type {
   VisionQueryPayload,
   Message,
@@ -84,8 +84,9 @@ export async function handleVisionQuery(
     }
 
     const hubUrl = settingsStore?.state?.hubUrl
-    const hubAccessToken = settingsStore?.state?.hubAccessToken
-    const hubRefreshToken = settingsStore?.state?.hubRefreshToken
+    /** SECURITY: Get tokens from secure storage instead of settings store */
+    const hubAccessToken = await getAccessToken()
+    const hubRefreshToken = await getRefreshToken()
 
     if (!hubAccessToken || !hubUrl) {
       port.postMessage({

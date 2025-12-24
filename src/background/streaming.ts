@@ -9,7 +9,7 @@ import { createLogger } from '../lib/core/debug'
 import { buildChatSystemPrompt } from '../lib/prompts'
 import { API, SAMPLING, MODELS } from '../lib/config/constants'
 import { getErrorMessage } from '../lib/core/errors'
-import { tryRefreshHubToken, type HubConfig } from './auth'
+import { tryRefreshHubToken, getAccessToken, getRefreshToken, type HubConfig } from './auth'
 import type {
   SettingsStateWithAuth,
   PersonalityState,
@@ -156,15 +156,18 @@ export async function streamViaHub(
       signal: controller.signal,
     })
 
-    // Handle 401 - token might be expired
+    /** Handle 401 - token might be expired */
     if (res.status === 401) {
       log.log('[Streaming] Hub token expired, attempting refresh')
-      // Try to refresh token
+      /** Try to refresh token */
       const refreshed = await tryRefreshHubToken(hubConfig)
       if (refreshed) {
-        // Retry with new token (recursive call with updated config)
+        /** Retry with new token (recursive call with updated config) */
         log.log('[Streaming] Hub token refreshed, retrying')
         activeStreamControllers.delete(requestId)
+        /** SECURITY: Get refreshed tokens from secure storage */
+        const newAccessToken = await getAccessToken()
+        const newRefreshToken = await getRefreshToken()
         const newData = await chrome.storage.local.get('settings-store')
         let newSettingsStore: PersistedStore<SettingsStateWithAuth>
         if (typeof newData?.['settings-store'] === 'string') {
@@ -174,14 +177,14 @@ export async function streamViaHub(
         }
         const newHubConfig: HubConfig = {
           hubUrl,
-          hubAccessToken: newSettingsStore?.state?.hubAccessToken || '',
-          hubRefreshToken: newSettingsStore?.state?.hubRefreshToken || null,
+          hubAccessToken: newAccessToken || '',
+          hubRefreshToken: newRefreshToken || null,
           settingsStore: newSettingsStore
         }
         await streamViaHub(port, payload, startTime, newHubConfig)
         return
       } else {
-        // Refresh failed - clear auth and error
+        /** Refresh failed - clear auth and error */
         log.error('[Streaming] Hub token refresh failed')
         port.postMessage({
           type: 'STREAM_ERROR',
@@ -294,10 +297,11 @@ export async function streamToPort(
       settingsStore = data?.['settings-store']
     }
 
-    // Hub-only mode - require Hub authentication
+    /** Hub-only mode - require Hub authentication */
     const hubUrl = settingsStore?.state?.hubUrl
-    const hubAccessToken = settingsStore?.state?.hubAccessToken
-    const hubRefreshToken = settingsStore?.state?.hubRefreshToken
+    /** SECURITY: Get tokens from secure storage instead of settings store */
+    const hubAccessToken = await getAccessToken()
+    const hubRefreshToken = await getRefreshToken()
 
     if (!hubAccessToken || !hubUrl) {
       log.log('[Streaming] Hub not connected')

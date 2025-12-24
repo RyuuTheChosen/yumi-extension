@@ -5,7 +5,7 @@
  * Replaces the Live2D overlay with a simpler, more maintainable implementation.
  */
 
-import { EchoAvatar } from '@yumi/echo-avatar'
+import { EchoAvatar, EmotionType } from '@yumi/echo-avatar'
 import { createLogger } from '../lib/core/debug'
 import { AVATAR } from '../lib/design/dimensions'
 import { sttService } from '../lib/stt/sttService'
@@ -187,19 +187,22 @@ function registerAnimationAPI(): void {
     }) as T
   }
 
-  ;(window as any).__yumiAnimation = {
+  /**
+   * SECURITY: Public animation API - only trigger and play exposed
+   * getRegistry removed to prevent metadata exposure to page scripts
+   */
+  window.__yumiAnimation = {
     trigger: requireContext((trigger: string) => {
       echoAvatar?.triggerAnimation(trigger)
     }),
     play: requireContext((animationId: string) => {
       return echoAvatar?.playAnimationById(animationId) ?? false
-    }),
-    getRegistry: requireContext(() => echoAvatar?.getAnimationRegistry())
+    })
   }
 
   /** Expose echoAvatar for debugging - only in extension context */
   if (isExtensionContext()) {
-    ;(window as any).__echoAvatar = echoAvatar
+    window.__echoAvatar = echoAvatar
   }
 
   log.log('[OK] Animation API registered')
@@ -685,11 +688,11 @@ function registerGlobalAPIs(): void {
   }
 
   /** Audio playback with lip sync - wrapped for security */
-  ;(window as any).__yumiConnectAndPlayAudio = requireExtensionContext(connectAndPlayAudio)
-  ;(window as any).__yumiConnectStreamingAnalyser = requireExtensionContext(connectStreamingAnalyser)
+  window.__yumiConnectAndPlayAudio = requireExtensionContext(connectAndPlayAudio)
+  window.__yumiConnectStreamingAnalyser = requireExtensionContext(connectStreamingAnalyser)
 
   /** Expression API - wrapped for security */
-  ;(window as any).__yumiExpression = {
+  window.__yumiExpression = {
     set: requireExtensionContext(async (name: string) => {
       if (echoAvatar) {
         const vrmName = mapExpression(name)
@@ -715,26 +718,26 @@ function registerGlobalAPIs(): void {
   }
 
   /** Touch interaction API - wrapped for security */
-  ;(window as any).__yumiTouch = {
+  window.__yumiTouch = {
     setEnabled: requireExtensionContext((enabled: boolean) => echoAvatar?.setTouchEnabled(enabled)),
     isEnabled: requireExtensionContext(() => echoAvatar?.isTouchEnabled() ?? false),
     clearCooldowns: requireExtensionContext(() => echoAvatar?.clearTouchCooldowns())
   }
 
   /** Thinking state API - wrapped for security */
-  ;(window as any).__yumiThinking = {
+  window.__yumiThinking = {
     start: requireExtensionContext(() => echoAvatar?.startThinking()),
     stop: requireExtensionContext(() => echoAvatar?.stopThinking()),
     isThinking: requireExtensionContext(() => echoAvatar?.isThinking() ?? false)
   }
 
   /** Emotion state API - wrapped for security */
-  ;(window as any).__yumiEmotion = {
+  window.__yumiEmotion = {
     set: requireExtensionContext((emotion: string, intensity?: number, duration?: number) => {
-      echoAvatar?.setEmotion(emotion as any, intensity, duration)
+      echoAvatar?.setEmotion(emotion as EmotionType, intensity, duration)
     }),
     nudge: requireExtensionContext((emotion: string, delta: number) => {
-      echoAvatar?.nudgeEmotion(emotion as any, delta)
+      echoAvatar?.nudgeEmotion(emotion as EmotionType, delta)
     }),
     get: requireExtensionContext(() => echoAvatar?.getEmotion() ?? 'neutral'),
     getIntensity: requireExtensionContext(() => echoAvatar?.getEmotionIntensity() ?? 0),
@@ -748,8 +751,14 @@ function registerGlobalAPIs(): void {
   /** Listen for thinking/emotion events */
   setupAnimationEventHandlers()
 
-  /** Bridge for DevTools debugging - listen for custom events from page context */
-  setupDevToolsBridge()
+  /**
+   * SECURITY: DevTools bridge only available in development builds
+   * Allows console commands to control avatar for debugging
+   * Tree-shaken in production builds
+   */
+  if (__DEV__) {
+    setupDevToolsBridge()
+  }
 
   console.log('[VrmOverlay] [OK] Global API functions registered')
 }

@@ -65,18 +65,34 @@ export const useAlertStore = create<AlertState>()((set, get) => ({
 
       const state = storedSettings?.state as Record<string, unknown> | undefined
       const hubUrl = state?.hubUrl as string | undefined
-      const hubAccessToken = state?.hubAccessToken as string | undefined
+
+      /** SECURITY: Get access token from session storage (not settings store) */
+      const sessionData = await chrome.storage.session.get('hubAccessToken')
+      const hubAccessToken = sessionData?.hubAccessToken as string | undefined
 
       if (!hubUrl || !hubAccessToken) {
         set({ connecting: false, error: 'Hub not connected' })
         return
       }
 
-      const wsUrl = hubUrl.replace('https://', 'wss://').replace('http://', 'ws://')
-      ws = new WebSocket(`${wsUrl}/v1/solana/alerts/ws?token=${hubAccessToken}`)
+      /**
+       * SECURITY: Connect without token in URL to prevent exposure in browser
+       * history, DevTools, and server logs. Auth is sent as first message.
+       *
+       * SECURITY: Only allow WSS (encrypted) connections, never WS
+       */
+      if (!hubUrl.startsWith('https://')) {
+        log.error('Insecure Hub URL rejected - HTTPS required')
+        set({ connecting: false, error: 'Secure connection required' })
+        return
+      }
+      const wsUrl = hubUrl.replace('https://', 'wss://')
+      ws = new WebSocket(`${wsUrl}/v1/solana/alerts/ws`)
 
       ws.onopen = () => {
         log.log('WebSocket connected')
+        /** Send auth as first message before any other communication */
+        ws!.send(JSON.stringify({ type: 'auth', token: hubAccessToken }))
         set({ connected: true, connecting: false, error: null })
       }
 

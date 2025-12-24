@@ -138,10 +138,19 @@ export class StreamingTTSService {
     }
 
     return new Promise((resolve) => {
-      // Build WebSocket URL with auth token
-      const wsProtocol = this.hubUrl.startsWith('https') ? 'wss' : 'ws'
-      const baseUrl = this.hubUrl.replace(/^https?/, wsProtocol)
-      const wsUrl = `${baseUrl}/v1/tts/ws?token=${encodeURIComponent(this.accessToken)}`
+      /**
+       * SECURITY: Connect without token in URL to prevent exposure in browser
+       * history, DevTools, and server logs. Auth is sent as first message.
+       *
+       * SECURITY: Only allow WSS (encrypted) connections, never WS
+       */
+      if (!this.hubUrl.startsWith('https://')) {
+        log.error('Insecure Hub URL rejected - HTTPS required')
+        this.setState('error')
+        resolve(false)
+        return
+      }
+      const wsUrl = `${this.hubUrl.replace('https://', 'wss://')}/v1/tts/ws`
 
       this.ws = new WebSocket(wsUrl)
 
@@ -157,6 +166,9 @@ export class StreamingTTSService {
           resolve(false)
           return
         }
+
+        /** Send auth as first message before any other communication */
+        this.ws!.send(JSON.stringify({ type: 'auth', token: this.accessToken }))
 
         /** Send init message */
         const initMsg: StreamingTTSOutMessage = {

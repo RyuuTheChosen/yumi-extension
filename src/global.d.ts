@@ -3,13 +3,15 @@
  * Extends Window interface with Yumi-specific APIs
  */
 
-import type { EchoAvatar, AnimationRegistry } from '@anthropic/echo-avatar'
+import type { EchoAvatar } from '@yumi/echo-avatar'
 
-/** Animation playback API exposed on window */
+/**
+ * Animation playback API exposed on window
+ * SECURITY: getRegistry removed to prevent metadata exposure to page scripts
+ */
 interface YumiAnimationAPI {
   trigger: (trigger: string) => void
   play: (animationId: string) => boolean
-  getRegistry: () => AnimationRegistry | undefined
 }
 
 /** Expression control API */
@@ -17,6 +19,7 @@ interface YumiExpressionAPI {
   set: (name: string) => Promise<void>
   get: () => string | null
   list: () => string[]
+  reset: () => Promise<void>
 }
 
 /** Touch/interaction API */
@@ -50,6 +53,9 @@ type YumiConnectAndPlayAudio = (audio: HTMLAudioElement, voiceId: string) => Pro
 type YumiConnectStreamingAnalyser = (analyser: AnalyserNode) => () => void
 
 declare global {
+  /** Build-time constant for development mode (set by Vite define) */
+  const __DEV__: boolean
+
   interface Window {
     /** Animation playback API */
     __yumiAnimation?: YumiAnimationAPI

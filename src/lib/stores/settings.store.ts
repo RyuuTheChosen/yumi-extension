@@ -53,6 +53,8 @@ interface SettingsState {
   proactiveWelcomeBack: boolean
   proactiveCooldownMins: number
   proactiveMaxPerSession: number
+  // Auto Search Settings
+  autoSearchEnabled: boolean
   setModel: (m: string) => void
   // Hub actions
   setHubUrl: (url: string) => void
@@ -83,6 +85,8 @@ interface SettingsState {
   setProactiveWelcomeBack: (enabled: boolean) => void
   setProactiveCooldownMins: (mins: number) => void
   setProactiveMaxPerSession: (max: number) => void
+  // Auto Search setters
+  setAutoSearchEnabled: (enabled: boolean) => void
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -116,13 +120,15 @@ export const useSettingsStore = create<SettingsState>()(
       proactiveWelcomeBack: true,
       proactiveCooldownMins: 10,
       proactiveMaxPerSession: 10,
+      // Auto Search defaults
+      autoSearchEnabled: true,
       setModel: (m) => set({ model: m }),
       setEnableLive2D: (enabled) => set({ enableLive2D: enabled }),
       setLive2DModelUrl: (url) => set({ live2DModelUrl: url }),
-      setLive2DScale: (scale) => set({ live2DScale: scale }),
-      setModelOffsetX: (offset) => set({ modelOffsetX: offset }),
-      setModelOffsetY: (offset) => set({ modelOffsetY: offset }),
-      setModelScaleMultiplier: (multiplier) => set({ modelScaleMultiplier: multiplier }),
+      setLive2DScale: (scale) => set({ live2DScale: Math.max(0.1, Math.min(5, scale)) }),
+      setModelOffsetX: (offset) => set({ modelOffsetX: Math.max(-2000, Math.min(2000, offset)) }),
+      setModelOffsetY: (offset) => set({ modelOffsetY: Math.max(-2000, Math.min(2000, offset)) }),
+      setModelScaleMultiplier: (multiplier) => set({ modelScaleMultiplier: Math.max(0.5, Math.min(10, multiplier)) }),
       resetModelPosition: () => set({ modelOffsetX: 0, modelOffsetY: 0, modelScaleMultiplier: 1.0 }),
       // Companion actions
       setActiveCompanionSlug: (slug) => set({ activeCompanionSlug: slug }),
@@ -189,6 +195,8 @@ export const useSettingsStore = create<SettingsState>()(
       setProactiveWelcomeBack: (enabled) => set({ proactiveWelcomeBack: enabled }),
       setProactiveCooldownMins: (mins) => set({ proactiveCooldownMins: Math.max(5, Math.min(60, mins)) }),
       setProactiveMaxPerSession: (max) => set({ proactiveMaxPerSession: Math.max(1, Math.min(20, max)) }),
+      // Auto Search setters
+      setAutoSearchEnabled: (enabled) => set({ autoSearchEnabled: enabled }),
     }),
     {
       name: 'settings-store',
@@ -202,19 +210,21 @@ export const useSettingsStore = create<SettingsState>()(
         modelOffsetY: s.modelOffsetY,
         modelScaleMultiplier: s.modelScaleMultiplier,
         activeCompanionSlug: s.activeCompanionSlug,
-        // Hub fields (required for API access)
+        /**
+         * Hub fields - SECURITY: tokens are NOT persisted here
+         * Access token: stored in chrome.storage.session (cleared on browser close)
+         * Refresh token: encrypted and stored separately in chrome.storage.local
+         */
         hubUrl: s.hubUrl,
-        hubAccessToken: s.hubAccessToken,
-        hubRefreshToken: s.hubRefreshToken,
         hubUser: s.hubUser,
         hubQuota: s.hubQuota,
-        // TTS fields
+        /** TTS fields */
         ttsEnabled: s.ttsEnabled,
         ttsVolume: s.ttsVolume,
         ttsSpeed: s.ttsSpeed,
-        // STT fields
+        /** STT fields */
         sttEnabled: s.sttEnabled,
-        // Proactive fields
+        /** Proactive fields */
         proactiveEnabled: s.proactiveEnabled,
         proactiveFollowUp: s.proactiveFollowUp,
         proactiveContext: s.proactiveContext,
@@ -222,11 +232,13 @@ export const useSettingsStore = create<SettingsState>()(
         proactiveWelcomeBack: s.proactiveWelcomeBack,
         proactiveCooldownMins: s.proactiveCooldownMins,
         proactiveMaxPerSession: s.proactiveMaxPerSession,
+        /** Auto Search fields */
+        autoSearchEnabled: s.autoSearchEnabled,
       }),
-      skipHydration: true, // Manual rehydration for content script timing control
-      version: 20, // Add Proactive Memory settings
+      skipHydration: true, /** Manual rehydration for content script timing control */
+      version: 22, /** Security: tokens moved to secure storage */
       migrate: (persisted: any, fromVersion: number) => {
-        // Handle older shapes by adding new defaults
+        /** Handle older shapes by adding new defaults */
         const base = persisted || {}
         const state = { ...(base.state || {}) }
         if (fromVersion < 1) {
@@ -353,17 +365,77 @@ export const useSettingsStore = create<SettingsState>()(
           if (typeof state.proactiveCooldownMins !== 'number') state.proactiveCooldownMins = 10
           if (typeof state.proactiveMaxPerSession !== 'number') state.proactiveMaxPerSession = 10
         }
+        if (fromVersion < 21) {
+          /** Add Auto Search setting */
+          if (typeof state.autoSearchEnabled !== 'boolean') state.autoSearchEnabled = true
+        }
+        if (fromVersion < 22) {
+          /**
+           * SECURITY: Tokens moved to secure storage
+           * Access token -> chrome.storage.session (cleared on browser close)
+           * Refresh token -> AES-GCM encrypted in chrome.storage.local
+           *
+           * The actual migration of token values is handled by the background
+           * script on startup (migrateTokensToSecureStorage in auth.ts)
+           * Here we just remove the fields from the persisted state.
+           */
+          delete state.hubAccessToken
+          delete state.hubRefreshToken
+        }
         return { ...base, state }
       },
-      onRehydrateStorage: (state) => {
+      onRehydrateStorage: () => {
         log.log('Hydration starts')
         return (state, error) => {
           if (error) {
             log.error('Hydration failed:', error)
           } else {
             log.log('Hydration finished successfully')
-            // Validate critical fields (read-only check)
             if (state) {
+              /** Validate and fix numeric bounds on rehydration */
+              let needsFix = false
+              const fixes: Record<string, { from: number; to: number }> = {}
+
+              if (typeof state.live2DScale === 'number') {
+                const clamped = Math.max(0.1, Math.min(5, state.live2DScale))
+                if (clamped !== state.live2DScale) {
+                  fixes.live2DScale = { from: state.live2DScale, to: clamped }
+                  state.setLive2DScale(clamped)
+                  needsFix = true
+                }
+              }
+
+              if (typeof state.modelOffsetX === 'number') {
+                const clamped = Math.max(-2000, Math.min(2000, state.modelOffsetX))
+                if (clamped !== state.modelOffsetX) {
+                  fixes.modelOffsetX = { from: state.modelOffsetX, to: clamped }
+                  state.setModelOffsetX(clamped)
+                  needsFix = true
+                }
+              }
+
+              if (typeof state.modelOffsetY === 'number') {
+                const clamped = Math.max(-2000, Math.min(2000, state.modelOffsetY))
+                if (clamped !== state.modelOffsetY) {
+                  fixes.modelOffsetY = { from: state.modelOffsetY, to: clamped }
+                  state.setModelOffsetY(clamped)
+                  needsFix = true
+                }
+              }
+
+              if (typeof state.modelScaleMultiplier === 'number') {
+                const clamped = Math.max(0.5, Math.min(10, state.modelScaleMultiplier))
+                if (clamped !== state.modelScaleMultiplier) {
+                  fixes.modelScaleMultiplier = { from: state.modelScaleMultiplier, to: clamped }
+                  state.setModelScaleMultiplier(clamped)
+                  needsFix = true
+                }
+              }
+
+              if (needsFix) {
+                log.warn('Fixed out-of-bounds settings on rehydration:', fixes)
+              }
+
               const hasModel = typeof state.model === 'string'
               const hasLive2D = typeof state.enableLive2D === 'boolean'
               const hasHubUrl = typeof state.hubUrl === 'string'

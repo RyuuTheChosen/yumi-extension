@@ -7,8 +7,8 @@
 
 import { createLogger } from '../lib/core/debug'
 import { MODELS, API, SAMPLING } from '../lib/config/constants'
-import { getErrorMessage } from '../lib/core/errors'
-import { tryRefreshHubToken, type HubConfig } from './auth'
+import { getErrorMessage, redactSensitive } from '../lib/core/errors'
+import { tryRefreshHubToken, getAccessToken, getRefreshToken, type HubConfig } from './auth'
 import type { SettingsStateWithAuth } from '../types'
 
 const log = createLogger('Memory')
@@ -66,8 +66,9 @@ export async function handleMemoryExtraction(
     }
 
     const hubUrl = settingsStore?.state?.hubUrl
-    const hubAccessToken = settingsStore?.state?.hubAccessToken
-    const hubRefreshToken = settingsStore?.state?.hubRefreshToken
+    /** SECURITY: Get tokens from secure storage instead of settings store */
+    const hubAccessToken = await getAccessToken()
+    const hubRefreshToken = await getRefreshToken()
 
     if (!hubAccessToken || !hubUrl) {
       return { success: false, error: 'Hub not connected' }
@@ -160,7 +161,7 @@ export async function handleMemoryExtraction(
     return { success: true, raw: content }
 
   } catch (err) {
-    log.error('[Memory] Extraction error:', err)
+    log.error('[Memory] Extraction error:', redactSensitive(err))
     return { success: false, error: getErrorMessage(err, 'Unknown error') }
   }
 }

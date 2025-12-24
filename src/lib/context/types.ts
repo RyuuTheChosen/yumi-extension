@@ -145,19 +145,51 @@ export interface ContextPrivacySettings {
 export const DEFAULT_PRIVACY_SETTINGS: ContextPrivacySettings = {
   enabled: true,
   extractContent: true,
-  trackActivity: false,               // Opt-in only
+  trackActivity: false,               /** Opt-in only */
   siteBlacklist: [
+    /** Email providers */
     'mail.google.com',
     'outlook.live.com',
+    'mail.yahoo.com',
+    'proton.me',
+    /** Financial */
     'banking',
-    'health',
     'paypal.com',
+    'venmo.com',
+    'chase.com',
+    'bankofamerica.com',
+    'wellsfargo.com',
+    /** Healthcare */
+    'health',
+    'healthcare.gov',
+    'mychart',
+    'patient',
+    /** Cloud admin consoles */
+    'portal.azure.com',
+    'console.aws.amazon.com',
+    'admin.google.com',
+    'console.cloud.google.com',
   ],
   sensitivePatterns: [
+    /** Credential keywords */
     /password/i,
+    /\bapi[_-]?key\b/i,
+    /\bsecret\b/i,
+    /\btoken\b/i,
+    /\bcredential/i,
+    /** Credit card patterns */
     /credit.?card/i,
+    /\b(?:\d{4}[-\s]?){3}\d{4}\b/,       /** 16 digits with spaces/dashes */
+    /** SSN patterns */
     /\bssn\b/i,
     /social.?security/i,
+    /\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b/,   /** XXX-XX-XXXX */
+    /** Email addresses */
+    /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/,
+    /** Phone numbers (various formats) */
+    /\b(?:\+1[-.\s]?)?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}\b/,
+    /** IP addresses */
+    /\b(?:\d{1,3}\.){3}\d{1,3}\b/,
   ],
 }
 

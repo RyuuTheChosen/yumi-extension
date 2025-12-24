@@ -7,7 +7,7 @@
 
 import { createLogger } from '../lib/core/debug'
 import { getErrorMessage } from '../lib/core/errors'
-import { tryRefreshHubToken, type HubConfig } from './auth'
+import { tryRefreshHubToken, getAccessToken, getRefreshToken, type HubConfig } from './auth'
 import type { SettingsStateWithAuth } from '../types'
 import type { SearchErrorType, SearchResult } from '../lib/search/types'
 
@@ -64,10 +64,11 @@ async function getHubSettings(): Promise<{
     settingsStore = data?.['settings-store'] || null
   }
 
+  /** SECURITY: Get tokens from secure storage instead of settings store */
   return {
     hubUrl: settingsStore?.state?.hubUrl || null,
-    hubAccessToken: settingsStore?.state?.hubAccessToken || null,
-    hubRefreshToken: settingsStore?.state?.hubRefreshToken || null,
+    hubAccessToken: await getAccessToken(),
+    hubRefreshToken: await getRefreshToken(),
     settingsStore,
   }
 }
