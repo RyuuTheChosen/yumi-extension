@@ -258,3 +258,56 @@ export function isAbortError(err: unknown): boolean {
   const message = getErrorMessage(err, '').toLowerCase()
   return message.includes('abort')
 }
+
+/**
+ * Patterns to redact from log output
+ * Matches common sensitive data formats to prevent PII/secret leakage
+ */
+const REDACT_PATTERNS: Array<{ pattern: RegExp; replacement: string }> = [
+  { pattern: /Bearer\s+[A-Za-z0-9\-_=]+\.[A-Za-z0-9\-_=]+\.[A-Za-z0-9\-_=]*/gi, replacement: 'Bearer [REDACTED]' },
+  { pattern: /api[_-]?key[=:]\s*["']?[A-Za-z0-9\-_]+["']?/gi, replacement: 'api_key=[REDACTED]' },
+  { pattern: /password[=:]\s*["']?[^"'\s]+["']?/gi, replacement: 'password=[REDACTED]' },
+  { pattern: /token[=:]\s*["']?[A-Za-z0-9\-_.]+["']?/gi, replacement: 'token=[REDACTED]' },
+  { pattern: /hubAccessToken[=:]\s*["']?[A-Za-z0-9\-_.]+["']?/gi, replacement: 'hubAccessToken=[REDACTED]' },
+  { pattern: /hubRefreshToken[=:]\s*["']?[A-Za-z0-9\-_.]+["']?/gi, replacement: 'hubRefreshToken=[REDACTED]' },
+  { pattern: /Authorization[=:]\s*["']?[^"'\s]+["']?/gi, replacement: 'Authorization=[REDACTED]' },
+]
+
+/**
+ * Redact sensitive information from error messages and objects
+ * Use this before logging errors that may contain user data or credentials
+ *
+ * @param input - Error object, string, or unknown value to redact
+ * @returns Redacted string safe for logging
+ *
+ * @example
+ * ```typescript
+ * catch (err) {
+ *   log.error('[Module] Error:', redactSensitive(err))
+ * }
+ * ```
+ */
+export function redactSensitive(input: unknown): string {
+  let text: string
+
+  if (input instanceof Error) {
+    text = `${input.name}: ${input.message}`
+    if (input.stack) {
+      text += `\n${input.stack}`
+    }
+  } else if (typeof input === 'string') {
+    text = input
+  } else {
+    try {
+      text = JSON.stringify(input)
+    } catch {
+      text = String(input)
+    }
+  }
+
+  for (const { pattern, replacement } of REDACT_PATTERNS) {
+    text = text.replace(pattern, replacement)
+  }
+
+  return text
+}

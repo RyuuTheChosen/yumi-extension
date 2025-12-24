@@ -1,11 +1,41 @@
 import { extractMainContent } from './extract'
 import { bus } from '../lib/core/bus'
 import { createLogger } from '../lib/core/debug'
+import { safeJsonParse } from '../lib/core/safeJson'
 import { detectPageType } from '../lib/memory'
 import { getActiveCompanion, checkAndSyncActiveCompanion } from '../lib/companions/loader'
 import { registerBuiltinPlugins, loadPluginsForCompanion } from '../lib/plugins'
 
 const log = createLogger('Content')
+
+interface SettingsStoreState {
+  state?: {
+    hubAccessToken?: string | null
+    enableLive2D?: boolean
+    activeCompanionSlug?: string
+    live2DScale?: number
+    modelOffsetX?: number
+    modelOffsetY?: number
+    modelScaleMultiplier?: number
+  }
+}
+
+/**
+ * Get parsed settings store state from Chrome storage.
+ * Safely handles both string and object formats.
+ */
+async function getSettingsState(): Promise<SettingsStoreState['state'] | null> {
+  const data = await chrome.storage.local.get('settings-store')
+  const raw = data?.['settings-store']
+
+  if (raw == null) return null
+
+  const store = typeof raw === 'string'
+    ? safeJsonParse<SettingsStoreState>(raw, {})
+    : raw as SettingsStoreState
+
+  return store?.state ?? null
+}
 
 /**
  * Register all builtin plugins in the content script context.
@@ -77,27 +107,49 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		bus.emit('avatar', message.payload)
 	}
 
-	// Handle companion change notification from background (for uninstall remount)
+	/** Handle companion change notification from background (for uninstall remount) */
 	if (message.type === 'COMPANION_CHANGED' && message.payload?.slug) {
 		log.log(' Received companion change notification:', message.payload.slug)
 		handleCompanionChange(message.payload.slug)
 	}
+
+	/** Debug: Animation trigger */
+	if (message.type === 'debug:trigger' && message.trigger) {
+		log.log('[Debug] Trigger animation:', message.trigger)
+		if (typeof window !== 'undefined' && (window as any).__yumiAnimation?.trigger) {
+			(window as any).__yumiAnimation.trigger(message.trigger)
+		}
+	}
+
+	/** Debug: Play animation by ID */
+	if (message.type === 'debug:play' && message.animationId) {
+		log.log('[Debug] Play animation:', message.animationId)
+		if (typeof window !== 'undefined' && (window as any).__yumiAnimation?.play) {
+			(window as any).__yumiAnimation.play(message.animationId)
+		}
+	}
+
+	/** Debug: Set expression */
+	if (message.type === 'debug:expression' && message.expression) {
+		log.log('[Debug] Set expression:', message.expression)
+		if (typeof window !== 'undefined' && (window as any).__yumiExpression?.set) {
+			(window as any).__yumiExpression.set(message.expression)
+		}
+	}
+
+	/** Debug: State control (speaking/thinking) */
+	if (message.type === 'debug:state' && message.state) {
+		log.log('[Debug] State:', message.state)
+		bus.emit('avatar', { type: message.state })
+	}
 })
 
-// Handle companion change notification - remount with new companion
+/** Handle companion change notification - remount with new companion */
 async function handleCompanionChange(newSlug: string) {
 	try {
-		// Check if overlay is enabled and user is logged in
-		const data = await chrome.storage.local.get('settings-store')
-		let store
-		if (typeof data?.['settings-store'] === 'string') {
-			store = JSON.parse(data['settings-store'])
-		} else {
-			store = data?.['settings-store']
-		}
-
-		const hubAccessToken = store?.state?.hubAccessToken
-		const enableOverlay = !!store?.state?.enableLive2D
+		const state = await getSettingsState()
+		const hubAccessToken = state?.hubAccessToken
+		const enableOverlay = !!state?.enableLive2D
 
 		if (!hubAccessToken || !enableOverlay) {
 			log.log(' Not logged in or overlay disabled, skipping companion change')
@@ -111,13 +163,13 @@ async function handleCompanionChange(newSlug: string) {
 		const plugins = await loadPluginsForCompanion(companion.personality.capabilities)
 		log.log(' Plugins reloaded for companion change:', plugins.map(p => p.manifest.id))
 
-		// Initialize vision abilities after plugins are loaded
+		/** Initialize vision abilities after plugins are loaded */
 		visionAbilities.init()
 
-		const scale = typeof store?.state?.live2DScale === 'number' ? store.state.live2DScale : 0.5
-		const modelOffsetX = typeof store?.state?.modelOffsetX === 'number' ? store.state.modelOffsetX : 0
-		const modelOffsetY = typeof store?.state?.modelOffsetY === 'number' ? store.state.modelOffsetY : 0
-		const modelScaleMultiplier = typeof store?.state?.modelScaleMultiplier === 'number' ? store.state.modelScaleMultiplier : 1.0
+		const scale = typeof state?.live2DScale === 'number' ? state.live2DScale : 0.5
+		const modelOffsetX = typeof state?.modelOffsetX === 'number' ? state.modelOffsetX : 0
+		const modelOffsetY = typeof state?.modelOffsetY === 'number' ? state.modelOffsetY : 0
+		const modelScaleMultiplier = typeof state?.modelScaleMultiplier === 'number' ? state.modelScaleMultiplier : 1.0
 
 		log.log(' Remounting with new companion:', companion.manifest.id)
 		mountOverlay({ modelUrl: companion.modelUrl, scale, position: 'bottom-right', modelOffsetX, modelOffsetY, modelScaleMultiplier })
@@ -139,32 +191,20 @@ async function indexPage() {
 if (document.readyState === 'complete') indexPage()
 else window.addEventListener('load', indexPage)
 
-// Mount overlay based on persisted settings and active companion
+/** Mount overlay based on persisted settings and active companion */
 async function maybeMountOverlay() {
 	try {
 		log.log(' Checking overlay settings...')
-		// Pull persisted zustand state (partial)
-		const data = await chrome.storage.local.get('settings-store')
-		log.log(' Storage data:', data)
+		const state = await getSettingsState()
 
-		// Parse the JSON string stored by zustand-chrome-storage
-		let store
-		if (typeof data?.['settings-store'] === 'string') {
-			store = JSON.parse(data['settings-store'])
-			log.log(' Parsed store:', store)
-		} else {
-			store = data?.['settings-store']
-		}
-
-		// Check Hub authentication - require login to use extension
-		const hubAccessToken = store?.state?.hubAccessToken
-		if (!hubAccessToken) {
+		/** Check Hub authentication - require login to use extension */
+		if (!state?.hubAccessToken) {
 			log.log(' Not authenticated with Hub, skipping overlay')
 			return
 		}
 
-		const activeSlug = store?.state?.activeCompanionSlug || 'yumi'
-		const enableOverlay = !!store?.state?.enableLive2D
+		const activeSlug = state.activeCompanionSlug || 'yumi'
+		const enableOverlay = !!state.enableLive2D
 		log.log(' Enable overlay:', enableOverlay)
 		if (!enableOverlay) {
 			log.log(' Overlay disabled, skipping mount')
@@ -184,12 +224,12 @@ async function maybeMountOverlay() {
 		// Initialize vision abilities after plugins are loaded
 		visionAbilities.init()
 
-		// Use companion's model URL (either blob URL from IndexedDB or extension URL for bundled)
+		/** Use companion's model URL (either blob URL from IndexedDB or extension URL for bundled) */
 		const resolvedUrl = companion.modelUrl
-		const scale = typeof store?.state?.live2DScale === 'number' ? store.state.live2DScale : 0.5
-		const modelOffsetX = typeof store?.state?.modelOffsetX === 'number' ? store.state.modelOffsetX : 0
-		const modelOffsetY = typeof store?.state?.modelOffsetY === 'number' ? store.state.modelOffsetY : 0
-		const modelScaleMultiplier = typeof store?.state?.modelScaleMultiplier === 'number' ? store.state.modelScaleMultiplier : 1.0
+		const scale = typeof state?.live2DScale === 'number' ? state.live2DScale : 0.5
+		const modelOffsetX = typeof state?.modelOffsetX === 'number' ? state.modelOffsetX : 0
+		const modelOffsetY = typeof state?.modelOffsetY === 'number' ? state.modelOffsetY : 0
+		const modelScaleMultiplier = typeof state?.modelScaleMultiplier === 'number' ? state.modelScaleMultiplier : 1.0
 		log.log(' Mounting overlay with:', { modelUrl: resolvedUrl, scale, position: 'bottom-right', modelOffsetX, modelOffsetY, modelScaleMultiplier })
 		mountOverlay({ modelUrl: resolvedUrl, scale, position: 'bottom-right', modelOffsetX, modelOffsetY, modelScaleMultiplier })
 	} catch (e) {
@@ -202,15 +242,8 @@ maybeMountOverlay()
 /** Background sync check for companion updates from Hub */
 async function runBackgroundSync() {
 	try {
-		const data = await chrome.storage.local.get('settings-store')
-		let store
-		if (typeof data?.['settings-store'] === 'string') {
-			store = JSON.parse(data['settings-store'])
-		} else {
-			store = data?.['settings-store']
-		}
-
-		const activeSlug = store?.state?.activeCompanionSlug || 'yumi'
+		const state = await getSettingsState()
+		const activeSlug = state?.activeCompanionSlug || 'yumi'
 
 		log.log(' Running background companion sync check for:', activeSlug)
 		const result = await checkAndSyncActiveCompanion(activeSlug)
@@ -224,11 +257,31 @@ async function runBackgroundSync() {
 	}
 }
 
-/** Run sync check after a delay to avoid blocking initial page load */
-setTimeout(runBackgroundSync, 5000)
+/** Timer tracking for cleanup on unload */
+const pendingTimers = new Set<ReturnType<typeof setTimeout>>()
 
-// Emit page:ready for proactive system (after a brief delay for page to settle)
-setTimeout(() => {
+function trackedTimeout(callback: () => void, ms: number): ReturnType<typeof setTimeout> {
+  const id = setTimeout(() => {
+    pendingTimers.delete(id)
+    callback()
+  }, ms)
+  pendingTimers.add(id)
+  return id
+}
+
+/** Clean up pending timers on page unload */
+window.addEventListener('beforeunload', () => {
+  for (const id of pendingTimers) {
+    clearTimeout(id)
+  }
+  pendingTimers.clear()
+})
+
+/** Run sync check after a delay to avoid blocking initial page load */
+trackedTimeout(runBackgroundSync, 5000)
+
+/** Emit page:ready for proactive system (after a brief delay for page to settle) */
+trackedTimeout(() => {
 	bus.emit('page:ready', {
 		url: window.location.href,
 		origin: window.location.origin,

@@ -33,6 +33,9 @@ export type {
   ExtractionResult,
   RetrievalOptions,
   RetrievalContext,
+  EntityType,
+  EntityLink,
+  ConversationSummary,
 } from './types'
 
 export {
@@ -40,6 +43,10 @@ export {
   MEMORY_LIMITS,
   EXTRACTION_CONFIG,
   MEMORY_DB_CONFIG,
+  EMBEDDING_CONFIG,
+  CLUSTERING_CONFIG,
+  ADAPTIVE_DECAY_CONFIG,
+  SUMMARY_CONFIG,
 } from './types'
 
 // Database
@@ -57,6 +64,22 @@ export {
   findSimilarMemory,
   getMemoryCount,
   getRecentMemories,
+  saveEntityLink,
+  getEntityLink,
+  getAllEntityLinks,
+  getEntitiesForMemory,
+  getEntitiesByType,
+  removeMemoryFromEntities,
+  clearAllEntityLinks,
+  saveSummary,
+  getSummary,
+  getSummaryByConversationId,
+  getAllSummaries,
+  getRecentSummaries,
+  getSummariesByUrl,
+  deleteSummary,
+  clearAllSummaries,
+  getSummariesForMemories,
 } from './db'
 
 // Store
@@ -68,5 +91,20 @@ export * from './extraction'
 // Retrieval
 export * from './retrieval'
 
+// Feedback
+export * from './feedback'
+
 // Proactive
 export * from './proactive'
+
+// Embedding
+export * from './embedding'
+
+// Clustering
+export * from './clustering'
+
+// Learning (Adaptive Decay)
+export * from './learning'
+
+// Conversation (Summaries)
+export * from './conversation'

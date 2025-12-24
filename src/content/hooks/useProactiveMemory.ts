@@ -74,7 +74,7 @@ export function useProactiveMemory(options: UseProactiveMemoryOptions): UseProac
 
   const [proactiveAction, setProactiveAction] = useState<ProactiveAction | null>(null)
   const proactiveControllerRef = useRef<ProactiveMemoryController | null>(null)
-  const updateImportance = useMemoryStore(s => s.updateImportance)
+  const updateMemory = useMemoryStore(s => s.updateMemory)
 
   /**
    * Initialize proactive controller once memories are loaded
@@ -258,16 +258,23 @@ export function useProactiveMemory(options: UseProactiveMemoryOptions): UseProac
   const handleProactiveEngaged = useCallback(async () => {
     if (!proactiveAction || !proactiveControllerRef.current) return
 
-    const memoryId = proactiveAction.memory?.id
-    if (memoryId) {
-      proactiveControllerRef.current.recordFeedback(memoryId, 'engaged')
-      await updateImportance(memoryId, 0.1)
+    const memory = proactiveAction.memory
+    const memoryId = memory?.id
+    if (memoryId && memory) {
+      /** Record feedback and get new feedback score */
+      const newFeedbackScore = proactiveControllerRef.current.recordFeedback(memoryId, memory, 'engaged')
+
+      /** Update the memory with new feedback score if returned */
+      if (newFeedbackScore !== null) {
+        await updateMemory(memoryId, { feedbackScore: newFeedbackScore })
+      }
+
       bus.emit('proactive:engaged', memoryId)
       log.log('[useProactiveMemory] Proactive engaged:', proactiveAction.type)
     }
 
     setProactiveAction(null)
-  }, [proactiveAction, updateImportance])
+  }, [proactiveAction])
 
   return {
     proactiveAction,

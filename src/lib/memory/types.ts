@@ -72,6 +72,63 @@ export interface Memory {
    * If set, memory will be pruned after this time regardless of importance.
    */
   expiresAt?: number
+
+  /**
+   * Number of times this memory was included in AI context.
+   * Different from accessCount which tracks retrieval attempts.
+   */
+  usageCount: number
+
+  /**
+   * Last time this memory was actually used in an AI response.
+   * Undefined if never used in a response.
+   */
+  lastUsedAt?: number
+
+  /**
+   * Aggregated user feedback score (-1 to 1).
+   * Positive = memory was helpful, negative = memory was not useful.
+   * Starts at 0 and adjusts based on user actions.
+   */
+  feedbackScore: number
+
+  /**
+   * Whether this memory has been verified/edited by the user.
+   * User-verified memories get higher trust and slower decay.
+   */
+  userVerified: boolean
+
+  /**
+   * Vector embedding for semantic search (1536 floats for text-embedding-3-small).
+   * Generated on demand, undefined means not yet computed.
+   */
+  embedding?: number[]
+
+  /**
+   * Model used to generate the embedding.
+   * Used to detect when embeddings need regeneration after model updates.
+   */
+  embeddingModel?: string
+
+  /**
+   * Adaptive decay rate multiplier (0.5 to 2.0).
+   * < 1.0 = slower decay (frequently used memories)
+   * > 1.0 = faster decay (rarely used memories)
+   * Undefined = use default rate (1.0)
+   */
+  adaptiveDecayRate?: number
+
+  /**
+   * Count of positive interactions (used in response, user engaged).
+   * Used to calculate adaptive decay rate.
+   */
+  positiveInteractions?: number
+
+  /**
+   * Count of negative interactions (dismissed, ignored when retrieved).
+   * Used to calculate adaptive decay rate.
+   */
+  negativeInteractions?: number
 }
 
 /**
@@ -141,6 +198,12 @@ export interface RetrievalOptions {
 
   /** Include decayed importance calculation */
   applyDecay?: boolean
+
+  /** If true, only return memories from the same site origin */
+  scopeToSite?: boolean
+
+  /** Optional query embedding for semantic search */
+  queryEmbedding?: number[]
 }
 
 /**
@@ -152,6 +215,9 @@ export interface RetrievalContext {
 
   /** Current page URL */
   currentUrl?: string
+
+  /** Site origin for scoped retrieval (e.g., "https://example.com") */
+  siteOrigin?: string
 
   /** Recent topics from conversation */
   recentTopics?: string[]
@@ -207,6 +273,9 @@ export const EXTRACTION_CONFIG = {
   /** Minimum time between extractions (ms) */
   minExtractionInterval: 5 * 60 * 1000,
 
+  /** Maximum extractions allowed per hour (rate limit) */
+  maxExtractionsPerHour: 12,
+
   /** Patterns to detect sensitive content that should never be stored */
   sensitivePatterns: [
     /password/i,
@@ -229,6 +298,191 @@ export const MEMORY_DB_CONFIG = {
   /** Store name for memories */
   storeName: 'memories',
 
-  /** Current schema version */
-  version: 1,
+  /** Store name for entity links */
+  entitiesStoreName: 'entities',
+
+  /** Store name for conversation summaries */
+  summariesStoreName: 'conversation-summaries',
+
+  /** Current schema version (v6 adds conversation summaries) */
+  version: 6,
+}
+
+/**
+ * Configuration for feedback scoring.
+ */
+export const FEEDBACK_CONFIG = {
+  /** Amount to boost score when user engages with proactive message */
+  engageBoost: 0.1,
+
+  /** Amount to decrease score when user dismisses proactive message */
+  dismissPenalty: -0.05,
+
+  /** Amount to boost score when memory is used in successful response */
+  usageBoost: 0.02,
+
+  /** Multiplier for user-verified memories in importance calculation */
+  verifiedMultiplier: 1.5,
+
+  /** Maximum absolute feedback score */
+  maxScore: 1.0,
+
+  /** Minimum absolute feedback score */
+  minScore: -1.0,
+}
+
+/**
+ * Configuration for embedding system.
+ */
+export const EMBEDDING_CONFIG = {
+  /** Embedding vector dimensions (text-embedding-3-small) */
+  dimensions: 1536,
+
+  /** Maximum texts to embed in one API call */
+  batchSize: 10,
+
+  /** Weight for semantic similarity in hybrid search (0-1) */
+  semanticWeight: 0.6,
+
+  /** Weight for keyword similarity in hybrid search (0-1) */
+  keywordWeight: 0.4,
+
+  /** Minimum similarity score to consider a match */
+  minSimilarity: 0.3,
+
+  /** Current embedding model version for cache invalidation */
+  modelVersion: 'text-embedding-3-small-v1',
+}
+
+/**
+ * Entity types that can be extracted from memories
+ */
+export type EntityType = 'person' | 'project' | 'skill' | 'technology'
+
+/**
+ * An entity extracted from memory content.
+ * Used to group related memories by shared entities.
+ */
+export interface EntityLink {
+  /** Unique identifier for this entity (hash of normalized name + type) */
+  entityId: string
+
+  /** Type of entity */
+  entityType: EntityType
+
+  /** Normalized entity name (e.g., "react", "john smith") */
+  entityName: string
+
+  /** Display name as originally extracted */
+  displayName: string
+
+  /** IDs of memories that mention this entity */
+  memoryIds: string[]
+
+  /** When this entity link was first created */
+  createdAt: number
+
+  /** When this entity link was last updated */
+  updatedAt: number
+}
+
+/**
+ * Configuration for entity clustering.
+ */
+export const CLUSTERING_CONFIG = {
+  /** Minimum entity name length to consider */
+  minEntityLength: 2,
+
+  /** Maximum entities to extract per memory */
+  maxEntitiesPerMemory: 10,
+
+  /** Minimum related memories to show in UI */
+  minRelatedMemories: 1,
+
+  /** Maximum related memories to show in UI */
+  maxRelatedMemories: 10,
+}
+
+/**
+ * Configuration for adaptive decay learning.
+ */
+export const ADAPTIVE_DECAY_CONFIG = {
+  /** Minimum decay rate multiplier (highly used memories decay slower) */
+  minDecayRate: 0.5,
+
+  /** Maximum decay rate multiplier (unused memories decay faster) */
+  maxDecayRate: 2.0,
+
+  /** Default decay rate when no interaction data */
+  defaultDecayRate: 1.0,
+
+  /** Weight of positive interactions in rate calculation */
+  positiveWeight: 0.15,
+
+  /** Weight of negative interactions in rate calculation */
+  negativeWeight: 0.1,
+
+  /** Usage count threshold for decay rate adjustment */
+  usageThreshold: 3,
+
+  /** Days without access to trigger accelerated decay */
+  staleThresholdDays: 30,
+
+  /** Decay acceleration for stale memories */
+  staleDecayMultiplier: 1.5,
+}
+
+/**
+ * A summary of a conversation for context linking.
+ */
+export interface ConversationSummary {
+  /** Unique identifier */
+  id: string
+
+  /** ID of the conversation this summarizes */
+  conversationId: string
+
+  /** Generated summary text */
+  summary: string
+
+  /** Key topics discussed */
+  keyTopics: string[]
+
+  /** IDs of memories extracted from this conversation */
+  memoryIds: string[]
+
+  /** Number of messages in the conversation */
+  messageCount: number
+
+  /** URL where conversation happened */
+  url?: string
+
+  /** When the conversation started */
+  conversationStartedAt: number
+
+  /** When the conversation ended */
+  conversationEndedAt: number
+
+  /** When this summary was created */
+  createdAt: number
+
+  /** Embedding for semantic search on summaries */
+  embedding?: number[]
+}
+
+/**
+ * Configuration for conversation summaries.
+ */
+export const SUMMARY_CONFIG = {
+  /** Minimum messages to trigger summary generation */
+  minMessagesForSummary: 10,
+
+  /** Maximum summary length in characters */
+  maxSummaryLength: 500,
+
+  /** Maximum key topics to extract */
+  maxKeyTopics: 5,
+
+  /** Store name for summaries */
+  summariesStoreName: 'conversation-summaries',
 }

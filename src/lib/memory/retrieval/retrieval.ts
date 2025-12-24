@@ -1,12 +1,15 @@
 /**
- * Memory Retrieval and Injection (Phase 2: Smart Retrieval)
+ * Memory Retrieval and Injection (Phase 3: Hybrid Search)
  *
  * Retrieves relevant memories and formats them for inclusion in AI prompts.
- * Uses keyword indexing and TF-IDF style relevance scoring.
+ * Uses keyword indexing, TF-IDF style relevance scoring, and semantic embeddings.
+ * Includes feedback-aware importance calculation.
  */
 
 import type { Memory, MemoryType, RetrievalContext, RetrievalOptions } from '../types'
 import { calculateDecayedImportance } from '../store/memory.store'
+import { calculateEffectiveImportance } from '../feedback'
+import { getSemanticBoost } from '../embedding'
 import {
   extractKeywords,
   extractEntities,
@@ -42,67 +45,82 @@ export function updateKeywordIndexCache(memories: Memory[]): void {
 }
 
 /**
- * Score a memory's relevance to the current context (Phase 2: Smart Retrieval)
+ * Score a memory's relevance to the current context (Phase 3: Hybrid Search)
  *
  * Scoring breakdown:
- * - Base importance (with decay): 25%
+ * - Base importance (with decay + feedback): 20%
  * - Confidence: 10%
  * - Recency: 10%
- * - Keyword match (TF-IDF weighted): 35%
- * - Entity match boost: 10%
+ * - Keyword match (TF-IDF weighted): 25%
+ * - Semantic similarity (if embeddings available): 20%
+ * - Entity match boost: 5%
  * - Type relevance: 10%
+ *
+ * @param memory - Memory to score
+ * @param context - Current conversation context
+ * @param keywordIndex - TF-IDF keyword index
+ * @param useFeedback - Whether to use feedback-aware importance (default true)
+ * @param queryEmbedding - Optional query embedding for semantic matching
  */
 export function scoreRelevance(
   memory: Memory,
   context: RetrievalContext,
-  keywordIndex?: Map<string, number>
+  keywordIndex?: Map<string, number>,
+  useFeedback: boolean = true,
+  queryEmbedding?: number[]
 ): number {
   let score = 0
 
-  // Base score from decayed importance (25%)
-  const importance = calculateDecayedImportance(memory)
-  score += importance * 0.25
+  /**
+   * Base score from importance (20%)
+   * Uses feedback-aware calculation if available, falls back to decay only
+   */
+  const importance = useFeedback
+    ? calculateEffectiveImportance(memory)
+    : calculateDecayedImportance(memory)
+  score += importance * 0.2
 
-  // Confidence contributes to score (10%)
+  /** Confidence contributes to score (10%) */
   score += memory.confidence * 0.1
 
-  // Recency boost (10%) - memories accessed recently get a boost
+  /** Recency boost (10%) - memories accessed recently get a boost */
   const hoursSinceAccess =
     (Date.now() - memory.lastAccessed) / (1000 * 60 * 60)
-  const recencyBoost = Math.exp(-hoursSinceAccess / 48) * 0.1 // Decays over 48 hours
+  const recencyBoost = Math.exp(-hoursSinceAccess / 48) * 0.1
   score += recencyBoost
 
-  // Smart keyword matching (35%)
+  /** Smart keyword matching (25%) */
   if (context.currentMessage) {
     const index = keywordIndex || cachedKeywordIndex || new Map()
 
-    // Extract keywords from query and memory
     const queryKeywords = extractKeywords(context.currentMessage)
     const memoryText = memory.content + ' ' + (memory.context || '')
     const memoryKeywords = extractKeywords(memoryText)
 
-    // Weighted keyword score (TF-IDF inspired)
     const keywordScore = weightedKeywordScore(queryKeywords, memoryKeywords, index)
-    score += keywordScore * 0.35
+    score += keywordScore * 0.25
 
-    // Entity match boost (10%) - extra points for matching names/tech
+    /** Entity match boost (5%) - extra points for matching names/tech */
     const queryEntities = extractEntities(context.currentMessage)
     const memoryEntities = extractEntities(memoryText)
 
     if (queryEntities.length > 0 && memoryEntities.length > 0) {
       const entityOverlap = jaccardSimilarity(queryEntities, memoryEntities)
-      score += entityOverlap * 0.1
+      score += entityOverlap * 0.05
 
-      // Extra boost for tech term matches
       const matchedTechTerms = getMatchingKeywords(queryEntities, memoryEntities)
         .filter(k => isTechTerm(k))
       if (matchedTechTerms.length > 0) {
-        score += Math.min(matchedTechTerms.length * 0.02, 0.05)
+        score += Math.min(matchedTechTerms.length * 0.01, 0.03)
       }
     }
   }
 
-  // Type-based relevance (10%) - identity always relevant
+  /** Semantic similarity boost (20%) - uses embeddings when available */
+  const semanticBoost = getSemanticBoost(memory, queryEmbedding, 0.2)
+  score += semanticBoost
+
+  /** Type-based relevance (10%) - identity always relevant */
   const typeRelevance: Record<MemoryType, number> = {
     identity: 0.1,
     preference: 0.08,
@@ -118,7 +136,18 @@ export function scoreRelevance(
 }
 
 /**
- * Retrieve memories relevant to the current context (Phase 2: Smart Retrieval)
+ * Extract origin from a URL string
+ */
+function extractOrigin(url: string): string | null {
+  try {
+    return new URL(url).origin
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Retrieve memories relevant to the current context (Phase 3: Hybrid Search)
  */
 export function retrieveRelevantMemories(
   allMemories: Memory[],
@@ -131,22 +160,42 @@ export function retrieveRelevantMemories(
     minImportance = DEFAULT_RETRIEVAL_LIMITS.minImportance,
     minConfidence = DEFAULT_RETRIEVAL_LIMITS.minConfidence,
     applyDecay = true,
+    scopeToSite = false,
+    queryEmbedding,
   } = options
 
-  // Build keyword index for TF-IDF scoring (rebuild if memory count changed)
+  /** Build keyword index for TF-IDF scoring (rebuild if memory count changed) */
   if (!cachedKeywordIndex || cachedMemoryCount !== allMemories.length) {
     updateKeywordIndexCache(allMemories)
   }
 
-  // Filter by types if specified
+  /** Filter by types if specified */
   let memories = types
     ? allMemories.filter((m) => types.includes(m.type))
     : allMemories
 
-  // Filter by confidence
+  /**
+   * Site scoping: Only return memories from the same origin
+   * Identity and preference types are allowed cross-site as they are personal, not site-specific
+   */
+  if (scopeToSite && context.siteOrigin) {
+    const allowedCrossSiteTypes: MemoryType[] = ['identity', 'preference']
+    memories = memories.filter((m) => {
+      if (allowedCrossSiteTypes.includes(m.type)) {
+        return true
+      }
+      if (!m.source.url) {
+        return false
+      }
+      const memoryOrigin = extractOrigin(m.source.url)
+      return memoryOrigin === context.siteOrigin
+    })
+  }
+
+  /** Filter by confidence */
   memories = memories.filter((m) => m.confidence >= minConfidence)
 
-  // Filter by importance (with optional decay)
+  /** Filter by importance (with optional decay) */
   memories = memories.filter((m) => {
     const importance = applyDecay
       ? calculateDecayedImportance(m)
@@ -154,15 +203,19 @@ export function retrieveRelevantMemories(
     return importance >= minImportance
   })
 
-  // Score and sort by relevance using the keyword index
+  /** Score and sort by relevance using keyword index and optional embeddings */
   const scored = memories.map((memory) => ({
     memory,
-    relevance: scoreRelevance(memory, context, cachedKeywordIndex || undefined),
+    relevance: scoreRelevance(
+      memory,
+      context,
+      cachedKeywordIndex || undefined,
+      true,
+      queryEmbedding
+    ),
   }))
 
   scored.sort((a, b) => b.relevance - a.relevance)
-
-  // Relevance scoring complete
 
   return scored.slice(0, limit).map(({ memory }) => memory)
 }

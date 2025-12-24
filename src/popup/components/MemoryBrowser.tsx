@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Brain, Search, Trash2, X, MessageCircle, Clock } from 'lucide-react'
+import { Brain, Search, Trash2, X, MessageCircle, Clock, Edit3, CheckSquare, Square, FileText } from 'lucide-react'
 import { cn } from '../../lib/design/utils'
 import { useMemoryStore, loadProactiveHistory } from '../../lib/memory'
-import type { Memory, MemoryType, ProactiveHistoryEntry } from '../../lib/memory'
+import type { Memory, MemoryType, MemoryUpdate, ProactiveHistoryEntry } from '../../lib/memory'
 import { createLogger } from '../../lib/core/debug'
+import { MemoryEditor } from './MemoryEditor'
+import { MemoryDetailView } from './MemoryDetailView'
+import { SummaryBrowser } from './SummaryBrowser'
 
 const log = createLogger('MemoryBrowser')
 
@@ -29,7 +32,7 @@ const MEMORY_TYPES: MemoryType[] = [
 ]
 
 type SortOption = 'newest' | 'oldest' | 'type'
-type TabOption = 'memories' | 'proactive'
+type TabOption = 'memories' | 'proactive' | 'summaries'
 
 const PROACTIVE_TYPE_COLORS: Record<string, string> = {
   welcome_back: 'bg-green-500/20 text-green-300',
@@ -91,10 +94,21 @@ export function MemoryBrowser() {
   const [proactiveHistory, setProactiveHistory] = useState<ProactiveHistoryEntry[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
 
+  /** Multi-select state */
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [isSelectMode, setIsSelectMode] = useState(false)
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
+
+  /** Modal states */
+  const [detailMemory, setDetailMemory] = useState<Memory | null>(null)
+  const [editMemory, setEditMemory] = useState<Memory | null>(null)
+
   const memories = useMemoryStore(s => s.memories)
   const isLoaded = useMemoryStore(s => s.isLoaded)
   const loadMemories = useMemoryStore(s => s.loadMemories)
   const removeMemory = useMemoryStore(s => s.removeMemory)
+  const removeMemories = useMemoryStore(s => s.removeMemories)
+  const updateMemory = useMemoryStore(s => s.updateMemory)
   const clearAll = useMemoryStore(s => s.clearAll)
 
   useEffect(() => {
@@ -174,6 +188,66 @@ export function MemoryBrowser() {
     setConfirmClearAll(false)
   }
 
+  /** Toggle selection for a memory */
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  /** Select or deselect all visible memories */
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredMemories.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(filteredMemories.map(m => m.id)))
+    }
+  }
+
+  /** Exit select mode */
+  const exitSelectMode = () => {
+    setIsSelectMode(false)
+    setSelectedIds(new Set())
+    setConfirmBulkDelete(false)
+  }
+
+  /** Bulk delete selected memories */
+  const handleBulkDelete = async () => {
+    if (!confirmBulkDelete) {
+      setConfirmBulkDelete(true)
+      return
+    }
+
+    await removeMemories(Array.from(selectedIds))
+    exitSelectMode()
+  }
+
+  /** Handle save from editor */
+  const handleSave = async (id: string, updates: MemoryUpdate) => {
+    await updateMemory(id, updates)
+  }
+
+  /** Open detail view, or toggle select in select mode */
+  const handleMemoryClick = (memory: Memory) => {
+    if (isSelectMode) {
+      toggleSelect(memory.id)
+    } else {
+      setDetailMemory(memory)
+    }
+  }
+
+  /** Open editor from detail view */
+  const handleEditFromDetail = (memory: Memory) => {
+    setDetailMemory(null)
+    setEditMemory(memory)
+  }
+
   if (!isLoaded) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -211,40 +285,117 @@ export function MemoryBrowser() {
           )}
         >
           <MessageCircle size={12} />
-          Activity ({proactiveHistory.length})
+          Activity
+        </button>
+        <button
+          onClick={() => setActiveTab('summaries')}
+          className={cn(
+            "flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs rounded-md transition-colors",
+            activeTab === 'summaries'
+              ? "bg-white/15 text-white"
+              : "text-white/50 hover:text-white/70"
+          )}
+        >
+          <FileText size={12} />
+          Summaries
         </button>
       </div>
 
       {activeTab === 'memories' && (
         <>
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-medium text-white">
-          All Memories
-        </h3>
-        {memories.length > 0 && (
-          confirmClearAll ? (
+        {isSelectMode ? (
+          <>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => setConfirmClearAll(false)}
-                className="px-2 py-1 text-[10px] rounded bg-white/10 text-white/70 hover:bg-white/20"
+                onClick={toggleSelectAll}
+                className="flex items-center gap-1.5 px-2 py-1 text-[10px] rounded bg-white/10 text-white/70 hover:bg-white/20"
               >
-                Cancel
+                {selectedIds.size === filteredMemories.length ? (
+                  <CheckSquare size={12} />
+                ) : (
+                  <Square size={12} />
+                )}
+                {selectedIds.size === filteredMemories.length ? 'Deselect All' : 'Select All'}
               </button>
+              <span className="text-[10px] text-white/50">
+                {selectedIds.size} selected
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {selectedIds.size > 0 && (
+                confirmBulkDelete ? (
+                  <>
+                    <button
+                      onClick={() => setConfirmBulkDelete(false)}
+                      className="px-2 py-1 text-[10px] rounded bg-white/10 text-white/70 hover:bg-white/20"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleBulkDelete}
+                      className="px-2 py-1 text-[10px] rounded bg-red-500/20 text-red-300 hover:bg-red-500/30"
+                    >
+                      Delete {selectedIds.size}
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={handleBulkDelete}
+                    className="flex items-center gap-1 px-2 py-1 text-[10px] rounded text-red-400 hover:bg-red-500/10"
+                  >
+                    <Trash2 size={10} />
+                    Delete
+                  </button>
+                )
+              )}
               <button
-                onClick={handleClearAll}
-                className="px-2 py-1 text-[10px] rounded bg-red-500/20 text-red-300 hover:bg-red-500/30"
+                onClick={exitSelectMode}
+                className="px-2 py-1 text-[10px] rounded text-white/50 hover:text-white hover:bg-white/10"
               >
-                Delete all
+                Done
               </button>
             </div>
-          ) : (
-            <button
-              onClick={() => setConfirmClearAll(true)}
-              className="px-2 py-1 text-[10px] rounded text-white/50 hover:text-red-400 hover:bg-white/5"
-            >
-              Clear All
-            </button>
-          )
+          </>
+        ) : (
+          <>
+            <h3 className="text-sm font-medium text-white">
+              All Memories
+            </h3>
+            {memories.length > 0 && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsSelectMode(true)}
+                  className="px-2 py-1 text-[10px] rounded text-white/50 hover:text-white hover:bg-white/5"
+                >
+                  Select
+                </button>
+                {confirmClearAll ? (
+                  <>
+                    <button
+                      onClick={() => setConfirmClearAll(false)}
+                      className="px-2 py-1 text-[10px] rounded bg-white/10 text-white/70 hover:bg-white/20"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleClearAll}
+                      className="px-2 py-1 text-[10px] rounded bg-red-500/20 text-red-300 hover:bg-red-500/30"
+                    >
+                      Delete all
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => setConfirmClearAll(true)}
+                    className="px-2 py-1 text-[10px] rounded text-white/50 hover:text-red-400 hover:bg-white/5"
+                  >
+                    Clear All
+                  </button>
+                )}
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -324,6 +475,7 @@ export function MemoryBrowser() {
             {filteredMemories.map((memory, index) => {
               const isExpanded = expandedIds.has(memory.id)
               const isLong = memory.content.length > 120
+              const isSelected = selectedIds.has(memory.id)
 
               return (
                 <motion.div
@@ -333,24 +485,55 @@ export function MemoryBrowser() {
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, x: -20, transition: { duration: 0.15 } }}
                   transition={{ duration: 0.2, delay: index * 0.03 }}
-                  className="p-3 rounded-lg border border-white/15 bg-white/5 group"
+                  onClick={() => handleMemoryClick(memory)}
+                  className={cn(
+                    "p-3 rounded-lg border bg-white/5 group cursor-pointer transition-colors",
+                    isSelected
+                      ? "border-blue-500/50 bg-blue-500/10"
+                      : "border-white/15 hover:border-white/25"
+                  )}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <span
-                      className={cn(
-                        "px-2 py-0.5 text-[10px] font-medium rounded-full",
-                        TYPE_COLORS[memory.type]
+                    <div className="flex items-center gap-2">
+                      {isSelectMode && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); toggleSelect(memory.id) }}
+                          className="p-0.5"
+                        >
+                          {isSelected ? (
+                            <CheckSquare size={14} className="text-blue-400" />
+                          ) : (
+                            <Square size={14} className="text-white/30" />
+                          )}
+                        </button>
                       )}
-                    >
-                      {memory.type}
-                    </span>
-                    <button
-                      onClick={() => handleDelete(memory.id)}
-                      className="p-1 rounded text-white/30 hover:text-red-400 hover:bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity"
-                      title="Delete memory"
-                    >
-                      <Trash2 size={12} />
-                    </button>
+                      <span
+                        className={cn(
+                          "px-2 py-0.5 text-[10px] font-medium rounded-full",
+                          TYPE_COLORS[memory.type]
+                        )}
+                      >
+                        {memory.type}
+                      </span>
+                    </div>
+                    {!isSelectMode && (
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); setEditMemory(memory) }}
+                          className="p-1 rounded text-white/30 hover:text-blue-400 hover:bg-white/5"
+                          title="Edit memory"
+                        >
+                          <Edit3 size={12} />
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDelete(memory.id) }}
+                          className="p-1 rounded text-white/30 hover:text-red-400 hover:bg-white/5"
+                          title="Delete memory"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    )}
                   </div>
                   <p className="text-xs text-white/80 mt-2 leading-relaxed">
                     {isLong && !isExpanded
@@ -359,7 +542,7 @@ export function MemoryBrowser() {
                   </p>
                   {isLong && (
                     <button
-                      onClick={() => toggleExpand(memory.id)}
+                      onClick={(e) => { e.stopPropagation(); toggleExpand(memory.id) }}
                       className="text-[10px] text-white/40 hover:text-white/60 mt-1"
                     >
                       {isExpanded ? 'Show less' : 'Show more'}
@@ -461,6 +644,37 @@ export function MemoryBrowser() {
             </AnimatePresence>
           )}
         </div>
+      )}
+
+      {activeTab === 'summaries' && (
+        <SummaryBrowser
+          onViewMemory={(memoryId) => {
+            const memory = memories.find(m => m.id === memoryId)
+            if (memory) {
+              setDetailMemory(memory)
+            }
+          }}
+        />
+      )}
+
+      {detailMemory && (
+        <MemoryDetailView
+          memory={detailMemory}
+          isOpen={!!detailMemory}
+          onClose={() => setDetailMemory(null)}
+          onEdit={handleEditFromDetail}
+          onSelectRelatedMemory={setDetailMemory}
+        />
+      )}
+
+      {editMemory && (
+        <MemoryEditor
+          memory={editMemory}
+          isOpen={!!editMemory}
+          onClose={() => setEditMemory(null)}
+          onSave={handleSave}
+          onDelete={handleDelete}
+        />
       )}
     </div>
   )

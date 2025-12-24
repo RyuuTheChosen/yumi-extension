@@ -27,7 +27,7 @@ import {
 } from '../lib/memory'
 import { checkPluginTriggers, isPluginActive } from '../lib/plugins/loader'
 import { extractPageContext, buildContextForPrompt } from '../lib/context'
-import { formatSearchResultsForPrompt, type SearchResult } from '../lib/search'
+import { formatSearchResultsForPrompt, shouldSuggestSearch, type SearchResult } from '../lib/search'
 import { Loader2 } from 'lucide-react'
 
 const log = createLogger('ChatOverlay')
@@ -100,6 +100,7 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
   const proactiveWelcomeBack = useSettingsStore(s => s.proactiveWelcomeBack)
   const proactiveCooldownMins = useSettingsStore(s => s.proactiveCooldownMins)
   const proactiveMaxPerSession = useSettingsStore(s => s.proactiveMaxPerSession)
+  const autoSearchEnabled = useSettingsStore(s => s.autoSearchEnabled)
 
   const { connected, sendViaPort } = usePortConnection()
 
@@ -273,7 +274,7 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
    * - Stop: when status becomes 'idle' or 'error' (response complete/failed)
    */
   useEffect(() => {
-    const thinkingAPI = (window as any).__yumiThinking
+    const thinkingAPI = window.__yumiThinking
     if (!thinkingAPI) return
 
     if (status === 'sending') {
@@ -288,8 +289,7 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
    */
   useEffect(() => {
     if (isExpanded) {
-      const emotionAPI = (window as any).__yumiEmotion
-      emotionAPI?.recordInteraction()
+      window.__yumiEmotion?.recordInteraction()
     }
   }, [isExpanded, displayMessages.length])
 
@@ -400,8 +400,14 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
   const handleSendMessage = useCallback(async (content: string) => {
     if (!content.trim() || statusRef.current === 'sending' || statusRef.current === 'streaming') return
 
-    if (searchActive) {
+    const searchPluginActive = isPluginActive('search')
+    const shouldAutoSearch = autoSearchEnabled && searchPluginActive && shouldSuggestSearch(content)
+
+    if (searchActive || shouldAutoSearch) {
       setSearchActive(false)
+      if (shouldAutoSearch && !searchActive) {
+        log.log('[ChatOverlay] Auto-search triggered for query:', content.slice(0, 50))
+      }
       const results = await performSearchForMessage(content)
       if (results && results.length > 0) {
         pendingSourcesRef.current = results
@@ -412,7 +418,7 @@ export const ChatOverlay: React.FC<ChatOverlayProps> = ({ chatButton, onToggle }
     } else {
       await doSendMessage(content)
     }
-  }, [searchActive, performSearchForMessage, doSendMessage, pendingSourcesRef])
+  }, [searchActive, autoSearchEnabled, performSearchForMessage, doSendMessage, pendingSourcesRef])
 
   const handleSearchToggle = useCallback(() => {
     setSearchActive(prev => !prev)

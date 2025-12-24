@@ -56,10 +56,13 @@ export class FloatingResponseBubble {
     this.content = ''
     this.isVisible = true
 
-    // Create container
+    /** Create container with accessibility attributes */
     this.container = document.createElement('div')
     this.container.className = 'yumi-floating-bubble'
     this.container.setAttribute('data-request-id', requestId)
+    this.container.setAttribute('role', 'alert')
+    this.container.setAttribute('aria-live', 'polite')
+    this.container.setAttribute('aria-label', 'Yumi response')
 
     // Calculate smart position (above avatar)
     const { x, y } = this.calculatePosition(config)
@@ -161,7 +164,16 @@ export class FloatingResponseBubble {
 
     document.body.appendChild(this.container)
 
-    // Trigger entrance animation
+    /** Add keyboard support for closing with Escape */
+    const handleKeydown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && this.isVisible) {
+        this.hide()
+        document.removeEventListener('keydown', handleKeydown)
+      }
+    }
+    document.addEventListener('keydown', handleKeydown)
+
+    /** Trigger entrance animation */
     requestAnimationFrame(() => {
       if (this.container) {
         this.container.style.opacity = '1'
@@ -182,8 +194,8 @@ export class FloatingResponseBubble {
     const maxHeight = config.maxHeight || 200
     const padding = 16
 
-    // Get avatar wrapper for more accurate positioning
-    const avatarWrapper = document.querySelector('.yumi-overlay-wrapper') as HTMLElement
+    /** Get avatar wrapper for more accurate positioning */
+    const avatarWrapper = document.querySelector('#yumi-overlay-wrapper') as HTMLElement
     let finalX: number
     let finalY: number
 
@@ -356,16 +368,26 @@ export class FloatingResponseBubble {
   }
 }
 
-// Singleton instance manager for multiple bubbles
+/**
+ * Singleton manager for floating response bubbles
+ * Enforces max 1 bubble at a time to avoid UI clutter
+ */
 class BubbleManager {
   private bubbles: Map<string, FloatingResponseBubble> = new Map()
-  private readonly MAX_BUBBLES = 1 // Only show 1 bubble at a time
+  private readonly MAX_BUBBLES = 1
 
   /**
    * Create and show a bubble. Returns the bubble if shown, null if chat overlay is open.
+   * Fixes race condition: checks if bubble CAN be shown BEFORE removing old bubble.
    */
   create(config: FloatingBubbleConfig, requestId: string): FloatingResponseBubble | null {
-    // Remove oldest bubble if at limit
+    /** Check if bubble can be shown BEFORE removing old one */
+    if (isChatOverlayOpen()) {
+      log.log('Chat overlay is open, not creating bubble')
+      return null
+    }
+
+    /** Remove oldest bubble if at limit */
     if (this.bubbles.size >= this.MAX_BUBBLES) {
       const oldestId = Array.from(this.bubbles.keys())[0]
       const oldest = this.bubbles.get(oldestId)
@@ -379,7 +401,6 @@ class BubbleManager {
     const shown = bubble.show(config, requestId)
 
     if (!shown) {
-      // Bubble was not shown (chat overlay is open)
       return null
     }
 

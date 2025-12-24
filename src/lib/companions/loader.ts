@@ -305,38 +305,50 @@ export async function loadBundledCompanion(companionId: string = BUNDLED_COMPANI
 async function loadVrmCompanion(slug: string, stored: StoredCompanion): Promise<LoadedCompanion | null> {
   const modelEntry = stored.manifest.model.entry
   const createdBlobUrls: string[] = []
+  let loadSuccess = false
 
-  const modelFileUrl = await getCompanionFileUrl(slug, modelEntry)
-  if (!modelFileUrl) {
-    log.log(`Missing VRM model file for installed companion: ${slug}, entry: ${modelEntry}`)
-    return null
-  }
-
-  const modelUrl = ensureBlobUrl(modelFileUrl)
-  if (modelUrl !== modelFileUrl) {
-    createdBlobUrls.push(modelUrl)
-  }
-
-  await markCompanionUsed(slug)
-
-  let previewUrl = ''
-  const previewFileUrl = await getCompanionFileUrl(slug, stored.manifest.preview)
-  if (previewFileUrl) {
-    previewUrl = ensureBlobUrl(previewFileUrl)
-    if (previewUrl !== previewFileUrl) {
-      createdBlobUrls.push(previewUrl)
+  try {
+    const modelFileUrl = await getCompanionFileUrl(slug, modelEntry)
+    if (!modelFileUrl) {
+      log.log(`Missing VRM model file for installed companion: ${slug}, entry: ${modelEntry}`)
+      return null
     }
-  }
 
-  trackBlobUrls(slug, createdBlobUrls)
-  log.log(`Loaded VRM companion: ${slug} with ${createdBlobUrls.length} blob URLs`)
+    const modelUrl = ensureBlobUrl(modelFileUrl)
+    if (modelUrl !== modelFileUrl) {
+      createdBlobUrls.push(modelUrl)
+    }
 
-  return {
-    manifest: stored.manifest,
-    personality: stored.personality,
-    modelUrl,
-    previewUrl,
-    baseUrl: `indexeddb://${slug}`,
+    await markCompanionUsed(slug)
+
+    let previewUrl = ''
+    const previewFileUrl = await getCompanionFileUrl(slug, stored.manifest.preview)
+    if (previewFileUrl) {
+      previewUrl = ensureBlobUrl(previewFileUrl)
+      if (previewUrl !== previewFileUrl) {
+        createdBlobUrls.push(previewUrl)
+      }
+    }
+
+    trackBlobUrls(slug, createdBlobUrls)
+    log.log(`Loaded VRM companion: ${slug} with ${createdBlobUrls.length} blob URLs`)
+    loadSuccess = true
+
+    return {
+      manifest: stored.manifest,
+      personality: stored.personality,
+      modelUrl,
+      previewUrl,
+      baseUrl: `indexeddb://${slug}`,
+    }
+  } finally {
+    /** Clean up blob URLs if load failed */
+    if (!loadSuccess && createdBlobUrls.length > 0) {
+      log.log(`Cleaning up ${createdBlobUrls.length} blob URLs after VRM load failure for ${slug}`)
+      for (const url of createdBlobUrls) {
+        URL.revokeObjectURL(url)
+      }
+    }
   }
 }
 
@@ -347,6 +359,10 @@ async function loadVrmCompanion(slug: string, stored: StoredCompanion): Promise<
  * Returns null if the companion is not installed or files are missing
  */
 export async function loadInstalledCompanion(slug: string): Promise<LoadedCompanion | null> {
+  /** Track blob URLs created during loading for cleanup on error */
+  const createdBlobUrls: string[] = []
+  let loadSuccess = false
+
   try {
     log.log(`Loading installed companion: ${slug}`)
 
@@ -395,10 +411,9 @@ export async function loadInstalledCompanion(slug: string): Promise<LoadedCompan
     const relativeFilePaths = extractModelFilePaths(modelJson)
     log.log(`Found ${relativeFilePaths.length} files to load for model`)
 
-    // Fetch all files and create blob URL map
-    // Key = relative path (as in model.json), Value = blob URL
+    /** Fetch all files and create blob URL map
+     * Key = relative path (as in model.json), Value = blob URL */
     const blobUrlMap: Map<string, string> = new Map()
-    const createdBlobUrls: string[] = []
 
     for (const relativePath of relativeFilePaths) {
       // Convert relative path to IndexedDB path
@@ -455,6 +470,7 @@ export async function loadInstalledCompanion(slug: string): Promise<LoadedCompan
     }
 
     log.log(`Loaded installed companion: ${slug} with ${createdBlobUrls.length} blob URLs`)
+    loadSuccess = true
 
     return {
       manifest: stored.manifest,
@@ -466,6 +482,14 @@ export async function loadInstalledCompanion(slug: string): Promise<LoadedCompan
   } catch (error) {
     log.error(`Failed to load installed companion ${slug}:`, error)
     return null
+  } finally {
+    /** Clean up blob URLs if load failed */
+    if (!loadSuccess && createdBlobUrls.length > 0) {
+      log.log(`Cleaning up ${createdBlobUrls.length} blob URLs after load failure for ${slug}`)
+      for (const url of createdBlobUrls) {
+        URL.revokeObjectURL(url)
+      }
+    }
   }
 }
 

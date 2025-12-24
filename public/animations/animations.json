@@ -4,11 +4,26 @@
     {
       "id": "standing_idle",
       "path": "idle_standing.fbx",
-      "loop": true,
+      "loop": false,
+      "loopCount": 2,
       "speed": 1.0,
       "fadeIn": 0.5,
       "fadeOut": 0.5,
+      "priority": 0,
       "tags": ["idle"]
+    },
+    {
+      "id": "happy_idle",
+      "path": "happy.fbx",
+      "loop": false,
+      "loopCount": 2,
+      "speed": 1.0,
+      "fadeIn": 0.5,
+      "fadeOut": 0.5,
+      "expressionHint": "happy",
+      "expressionIntensity": 0.5,
+      "priority": 0,
+      "tags": ["idle", "positive"]
     },
     {
       "id": "talking_1",
@@ -17,6 +32,7 @@
       "speed": 1.0,
       "fadeIn": 0.3,
       "fadeOut": 0.3,
+      "priority": 3,
       "tags": ["talking"]
     },
     {
@@ -26,6 +42,7 @@
       "speed": 1.0,
       "fadeIn": 0.3,
       "fadeOut": 0.3,
+      "priority": 3,
       "tags": ["talking"]
     },
     {
@@ -35,6 +52,7 @@
       "speed": 1.0,
       "fadeIn": 0.3,
       "fadeOut": 0.3,
+      "priority": 3,
       "tags": ["talking"]
     },
     {
@@ -46,13 +64,72 @@
       "fadeOut": 0.3,
       "expressionHint": "happy",
       "expressionIntensity": 0.8,
+      "priority": 1,
       "tags": ["dance", "happy"]
+    },
+    {
+      "id": "excited",
+      "path": "excited.fbx",
+      "loop": true,
+      "speed": 1.0,
+      "fadeIn": 0.25,
+      "fadeOut": 0.4,
+      "expressionHint": "happy",
+      "expressionIntensity": 0.9,
+      "priority": 1,
+      "tags": ["emotion", "positive", "intense"]
+    },
+    {
+      "id": "sad_idle",
+      "path": "sad_idle.fbx",
+      "loop": true,
+      "speed": 0.9,
+      "fadeIn": 0.4,
+      "fadeOut": 0.5,
+      "expressionHint": "sad",
+      "expressionIntensity": 0.8,
+      "priority": 1,
+      "tags": ["emotion", "negative", "idle"]
+    },
+    {
+      "id": "angry",
+      "path": "angry.fbx",
+      "loop": true,
+      "speed": 1.1,
+      "fadeIn": 0.2,
+      "fadeOut": 0.3,
+      "expressionHint": "angry",
+      "expressionIntensity": 0.85,
+      "priority": 2,
+      "tags": ["emotion", "negative", "intense"]
+    },
+    {
+      "id": "thinking",
+      "path": "thinking.fbx",
+      "loop": true,
+      "speed": 0.85,
+      "fadeIn": 0.3,
+      "fadeOut": 0.3,
+      "priority": 2,
+      "tags": ["state", "processing"]
+    },
+    {
+      "id": "greeting",
+      "path": "standing_greeting.fbx",
+      "loop": false,
+      "speed": 1.0,
+      "fadeIn": 0.2,
+      "fadeOut": 0.4,
+      "expressionHint": "happy",
+      "expressionIntensity": 0.7,
+      "priority": 4,
+      "tags": ["reaction", "social"]
     }
   ],
   "triggers": [
     {
       "trigger": "onIdle",
-      "animations": ["standing_idle"],
+      "animations": ["standing_idle", "happy_idle"],
       "weight": 1,
       "cooldown": 0
     },
@@ -63,10 +140,40 @@
       "cooldown": 0
     },
     {
+      "trigger": "onThinking",
+      "animations": ["thinking"],
+      "weight": 1,
+      "cooldown": 0
+    },
+    {
       "trigger": "onHappy",
-      "animations": ["dancing"],
+      "animations": ["excited", "dancing"],
+      "weight": 1,
+      "cooldown": 8
+    },
+    {
+      "trigger": "onSad",
+      "animations": ["sad_idle"],
       "weight": 1,
       "cooldown": 10
+    },
+    {
+      "trigger": "onAngry",
+      "animations": ["angry"],
+      "weight": 1,
+      "cooldown": 10
+    },
+    {
+      "trigger": "onGreeting",
+      "animations": ["greeting"],
+      "weight": 1,
+      "cooldown": 30
+    },
+    {
+      "trigger": "onTouch",
+      "animations": ["greeting", "excited"],
+      "weight": 1,
+      "cooldown": 3
     }
   ]
 }

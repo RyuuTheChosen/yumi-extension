@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Check, AlertCircle, Bot, Eye, Cloud, Download, ExternalLink, Loader2, Volume2, Brain } from 'lucide-react'
+import { Check, AlertCircle, Bot, Eye, Cloud, Download, ExternalLink, Loader2, Volume2, Brain, Search, Bug } from 'lucide-react'
 import { useSettingsStore } from '../../lib/stores/settings.store'
 import { cn } from '../../lib/design/utils'
 import { VisionSettings } from './VisionSettings'
@@ -17,7 +17,7 @@ interface CompanionOption {
   previewUrl?: string   // Preview image URL
 }
 
-type TabType = 'hub' | 'avatar' | 'vision' | 'voice' | 'memory'
+type TabType = 'hub' | 'avatar' | 'vision' | 'voice' | 'memory' | 'debug'
 
 export function SettingsPanel() {
   const [activeTab, setActiveTab] = useState<TabType>('hub')
@@ -51,6 +51,10 @@ export function SettingsPanel() {
   // STT settings (speech-to-text)
   const sttEnabled = useSettingsStore(s => s.sttEnabled)
   const setSTTEnabled = useSettingsStore(s => s.setSTTEnabled)
+
+  // Auto-Search settings
+  const autoSearchEnabled = useSettingsStore(s => s.autoSearchEnabled)
+  const setAutoSearchEnabled = useSettingsStore(s => s.setAutoSearchEnabled)
 
   // Proactive Memory settings
   const proactiveEnabled = useSettingsStore(s => s.proactiveEnabled)
@@ -370,6 +374,25 @@ export function SettingsPanel() {
           <Brain size={14} />
           Memory
           {activeTab === 'memory' && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white" />
+          )}
+        </button>
+        <button
+          onClick={() => setActiveTab('debug')}
+          className={cn(
+            "flex items-center gap-1 px-3 py-2.5 text-xs font-medium transition-colors relative flex-shrink-0",
+            "focus:outline-none",
+            activeTab === 'debug'
+              ? "text-white"
+              : "text-white/50 hover:text-white/80"
+          )}
+          role="tab"
+          aria-selected={activeTab === 'debug'}
+          aria-controls="debug-panel"
+        >
+          <Bug size={14} />
+          Debug
+          {activeTab === 'debug' && (
             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white" />
           )}
         </button>
@@ -810,6 +833,38 @@ export function SettingsPanel() {
 
         {activeTab === 'memory' && (
           <>
+            {/* Auto Web Search Section */}
+            <div className="flex flex-col gap-3 p-3 rounded-lg border border-white/15 bg-white/5">
+              <div className="flex items-center justify-between">
+                <div className="flex-1">
+                  <label className="text-sm font-medium text-white flex items-center gap-2">
+                    <Search size={14} className="text-white/70" />
+                    Auto Web Search
+                  </label>
+                  <p className="text-xs text-white/50 mt-0.5">
+                    Automatically search for current events, prices, weather
+                  </p>
+                </div>
+                <button
+                  onClick={() => setAutoSearchEnabled(!autoSearchEnabled)}
+                  className={cn(
+                    "px-4 py-2 text-xs font-bold rounded-lg transition-all duration-200",
+                    "focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40",
+                    autoSearchEnabled
+                      ? "bg-white/90 text-mono-900 hover:bg-white shadow-md"
+                      : "bg-white/15 text-white/70 hover:bg-white/25"
+                  )}
+                >
+                  {autoSearchEnabled ? 'Enabled' : 'Disabled'}
+                </button>
+              </div>
+              {autoSearchEnabled && (
+                <p className="text-xs text-white/40 pt-2 border-t border-white/10">
+                  Triggers for: latest news, prices, weather, current events, "today", "this week"
+                </p>
+              )}
+            </div>
+
             {/* Proactive Companion Section */}
             <div className="flex flex-col gap-3 p-3 rounded-lg border border-white/15 bg-white/5">
               <div className="flex items-center justify-between">
@@ -1084,6 +1139,181 @@ export function SettingsPanel() {
               </p>
             </div>
 
+          </>
+        )}
+
+        {/* Debug Tab */}
+        {activeTab === 'debug' && (
+          <>
+            {/* Animation Triggers */}
+            <div className="flex flex-col gap-3 p-3 rounded-lg border border-white/15 bg-white/5">
+              <div>
+                <label className="text-sm font-medium text-white">
+                  Animation Triggers
+                </label>
+                <p className="text-xs text-white/50 mt-0.5">
+                  Test animation triggers
+                </p>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {['onIdle', 'onTalking', 'onThinking', 'onHappy', 'onSad', 'onAngry', 'onGreeting', 'onTouch'].map((trigger) => (
+                  <button
+                    key={trigger}
+                    onClick={() => {
+                      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                        if (tabs[0]?.id) {
+                          chrome.tabs.sendMessage(tabs[0].id, { type: 'debug:trigger', trigger })
+                        }
+                      })
+                    }}
+                    className={cn(
+                      "px-2 py-1.5 text-xs rounded-lg transition-colors",
+                      "border border-white/20 hover:bg-white/10 text-white/70 hover:text-white"
+                    )}
+                  >
+                    {trigger.replace('on', '')}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Direct Animations */}
+            <div className="flex flex-col gap-3 p-3 rounded-lg border border-white/15 bg-white/5">
+              <div>
+                <label className="text-sm font-medium text-white">
+                  Play Animation
+                </label>
+                <p className="text-xs text-white/50 mt-0.5">
+                  Play specific animation by ID
+                </p>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {['dancing', 'excited', 'greeting', 'thinking', 'sad_idle', 'angry'].map((animId) => (
+                  <button
+                    key={animId}
+                    onClick={() => {
+                      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                        if (tabs[0]?.id) {
+                          chrome.tabs.sendMessage(tabs[0].id, { type: 'debug:play', animationId: animId })
+                        }
+                      })
+                    }}
+                    className={cn(
+                      "px-2 py-1.5 text-xs rounded-lg transition-colors",
+                      "border border-white/20 hover:bg-white/10 text-white/70 hover:text-white"
+                    )}
+                  >
+                    {animId.replace('_', ' ')}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Expression Controls */}
+            <div className="flex flex-col gap-3 p-3 rounded-lg border border-white/15 bg-white/5">
+              <div>
+                <label className="text-sm font-medium text-white">
+                  Expressions
+                </label>
+                <p className="text-xs text-white/50 mt-0.5">
+                  Test facial expressions
+                </p>
+              </div>
+              <div className="grid grid-cols-4 gap-2">
+                {['neutral', 'happy', 'sad', 'angry', 'surprised', 'relaxed'].map((expr) => (
+                  <button
+                    key={expr}
+                    onClick={() => {
+                      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                        if (tabs[0]?.id) {
+                          chrome.tabs.sendMessage(tabs[0].id, { type: 'debug:expression', expression: expr })
+                        }
+                      })
+                    }}
+                    className={cn(
+                      "px-2 py-1.5 text-xs rounded-lg transition-colors",
+                      "border border-white/20 hover:bg-white/10 text-white/70 hover:text-white"
+                    )}
+                  >
+                    {expr}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* State Controls */}
+            <div className="flex flex-col gap-3 p-3 rounded-lg border border-white/15 bg-white/5">
+              <div>
+                <label className="text-sm font-medium text-white">
+                  State Controls
+                </label>
+                <p className="text-xs text-white/50 mt-0.5">
+                  Test speaking/thinking states
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => {
+                    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                      if (tabs[0]?.id) {
+                        chrome.tabs.sendMessage(tabs[0].id, { type: 'debug:state', state: 'speaking:start' })
+                      }
+                    })
+                  }}
+                  className={cn(
+                    "px-2 py-1.5 text-xs rounded-lg transition-colors",
+                    "border border-green-500/30 bg-green-500/10 hover:bg-green-500/20 text-green-400"
+                  )}
+                >
+                  Speaking Start
+                </button>
+                <button
+                  onClick={() => {
+                    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                      if (tabs[0]?.id) {
+                        chrome.tabs.sendMessage(tabs[0].id, { type: 'debug:state', state: 'speaking:stop' })
+                      }
+                    })
+                  }}
+                  className={cn(
+                    "px-2 py-1.5 text-xs rounded-lg transition-colors",
+                    "border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-400"
+                  )}
+                >
+                  Speaking Stop
+                </button>
+                <button
+                  onClick={() => {
+                    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                      if (tabs[0]?.id) {
+                        chrome.tabs.sendMessage(tabs[0].id, { type: 'debug:state', state: 'thinking:start' })
+                      }
+                    })
+                  }}
+                  className={cn(
+                    "px-2 py-1.5 text-xs rounded-lg transition-colors",
+                    "border border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400"
+                  )}
+                >
+                  Thinking Start
+                </button>
+                <button
+                  onClick={() => {
+                    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                      if (tabs[0]?.id) {
+                        chrome.tabs.sendMessage(tabs[0].id, { type: 'debug:state', state: 'thinking:stop' })
+                      }
+                    })
+                  }}
+                  className={cn(
+                    "px-2 py-1.5 text-xs rounded-lg transition-colors",
+                    "border border-orange-500/30 bg-orange-500/10 hover:bg-orange-500/20 text-orange-400"
+                  )}
+                >
+                  Thinking Stop
+                </button>
+              </div>
+            </div>
           </>
         )}
       </div>

@@ -36,7 +36,7 @@ async function flush(key: string) {
 export const debouncedChromeStorage: StateStorage = {
   getItem: async (key) => {
     const res = await chrome.storage.local.get([key])
-    const v = (res as any)?.[key]
+    const v = res[key] as string | object | null | undefined
     return typeof v === 'string' ? v : v == null ? null : JSON.stringify(v)
   },
   setItem: async (key, value) => {
@@ -44,7 +44,9 @@ export const debouncedChromeStorage: StateStorage = {
     const prev = timers.get(key)
     if (prev) window.clearTimeout(prev)
     const t = window.setTimeout(() => {
-      flush(key).catch(() => void 0)
+      flush(key).catch((err) => {
+        console.error(`[Storage] Failed to flush key "${key}":`, err)
+      })
     }, DEBOUNCE_MS)
     timers.set(key, t)
   },

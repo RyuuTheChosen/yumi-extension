@@ -17,6 +17,37 @@ import { isPluginActive } from '../../lib/plugins/loader'
 
 const log = createLogger('useMemoryExtraction')
 
+/** Track extraction timestamps for rate limiting (persists across component re-renders) */
+const extractionHistory: number[] = []
+
+/**
+ * Check if extraction is allowed by rate limit
+ * @returns true if extraction is allowed, false if rate limited
+ */
+function isRateLimitOk(): boolean {
+  const now = Date.now()
+  const oneHourAgo = now - 60 * 60 * 1000
+
+  /** Remove old entries outside the 1-hour window */
+  while (extractionHistory.length > 0 && extractionHistory[0] < oneHourAgo) {
+    extractionHistory.shift()
+  }
+
+  if (extractionHistory.length >= EXTRACTION_CONFIG.maxExtractionsPerHour) {
+    log.log('[useMemoryExtraction] Rate limit exceeded, skipping extraction')
+    return false
+  }
+
+  return true
+}
+
+/**
+ * Record a successful extraction for rate limiting
+ */
+function recordExtraction(): void {
+  extractionHistory.push(Date.now())
+}
+
 export interface UseMemoryExtractionOptions {
   status: 'idle' | 'sending' | 'streaming' | 'error' | 'canceled'
   displayMessages: Message[]
@@ -71,6 +102,10 @@ export function useMemoryExtraction(options: UseMemoryExtractionOptions): void {
           return
         }
 
+        if (!isRateLimitOk()) {
+          return
+        }
+
         log.log('[useMemoryExtraction] Triggering memory extraction...')
         log.log('[useMemoryExtraction] displayMessages count:', displayMessages.length)
 
@@ -109,6 +144,7 @@ export function useMemoryExtraction(options: UseMemoryExtractionOptions): void {
           }))
 
           await addMemories(memoriesWithSource)
+          recordExtraction()
           log.log(`[useMemoryExtraction] Extracted and saved ${result.memories.length} memories`)
         } else if (!result.success) {
           log.error('[useMemoryExtraction] Extraction failed:', result.error)

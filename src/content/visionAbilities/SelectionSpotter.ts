@@ -1,11 +1,16 @@
 import type { SelectionSpotterConfig } from '../../lib/types/visionConfig'
-import { getSurroundingText, getAvatarPosition } from './utils'
+import {
+  getSurroundingText,
+  getAvatarPositionWithFallback,
+  setupStreamListenerCleanup
+} from './utils'
 import { getSelectionInputUI } from './SelectionInputUI'
 import { sendPortMessage, getActivePort } from '../portManager'
 import { getCurrentScope } from '../utils/scopes'
 import { useScopedChatStore } from '../stores/scopedChat.store'
 import type { Message } from '../utils/db'
 import { bubbleManager, type VisionStage } from './FloatingResponseBubble'
+import { isChatOverlayOpen } from '../chatState'
 import { createLogger } from '../../lib/core/debug'
 
 const log = createLogger('SelectionSpotter')
@@ -53,12 +58,14 @@ export class SelectionSpotter {
     }
     if (selectedText === this.lastSelection) return
 
-    // Ignore input fields
+    /** Ignore input fields and contenteditable elements */
     if (this.config.ignoreInputFields) {
       const anchorNode = selection.anchorNode
       const parentElement = anchorNode?.parentElement
-      if (parentElement && ['INPUT', 'TEXTAREA'].includes(parentElement.tagName)) {
-        return
+      if (parentElement) {
+        if (['INPUT', 'TEXTAREA'].includes(parentElement.tagName)) return
+        if (parentElement.isContentEditable) return
+        if (parentElement.closest('[contenteditable="true"]')) return
       }
     }
 
@@ -145,40 +152,54 @@ export class SelectionSpotter {
       content: msg.content
     }))
     
-    // === Create floating bubble above avatar (only if chat is closed) ===
-    const avatarPos = getAvatarPosition()
-    const bubble = avatarPos ? bubbleManager.create({
+    /**
+     * Create floating bubble above avatar (only if chat is closed)
+     * Use fallback position if avatar not found
+     */
+    const chatIsOpen = isChatOverlayOpen()
+    const avatarPos = getAvatarPositionWithFallback()
+    const bubble = chatIsOpen ? null : bubbleManager.create({
       position: { x: avatarPos.x, y: avatarPos.y },
       anchor: 'avatar',
       autoFadeMs: 10000
-    }, requestId) : null
+    }, requestId)
 
-    // Subscribe to port messages for this specific request
+    if (chatIsOpen) {
+      log.log('Chat overlay open, response will appear in chat')
+    }
+
+    /**
+     * Subscribe to port messages - ALWAYS attach listener regardless of bubble state
+     * This ensures responses are processed even if bubble couldn't be created
+     */
     const port = getActivePort()
-    if (port && bubble) {
-      const streamListener = (msg: any) => {
-        if (msg.payload?.requestId !== requestId) return
+    if (port) {
+      const streamListener = (msg: unknown) => {
+        const message = msg as { type?: string; payload?: { requestId?: string; stage?: VisionStage; message?: string; delta?: string; error?: string } }
+        if (message.payload?.requestId !== requestId) return
 
-        if (msg.type === 'VISION_STAGE') {
-          const stage = msg.payload.stage as VisionStage
-          bubble.setStage(stage, msg.payload.message)
-        } else if (msg.type === 'STREAM_CHUNK') {
-          bubble.appendChunk(msg.payload.delta)
-        } else if (msg.type === 'STREAM_END') {
-          bubble.finalize()
-          port.onMessage.removeListener(streamListener)
-          bubbleManager.remove(requestId)
-        } else if (msg.type === 'STREAM_ERROR') {
-          bubble.showError(msg.payload.error || 'An error occurred')
-          port.onMessage.removeListener(streamListener)
-          bubbleManager.remove(requestId)
+        if (message.type === 'VISION_STAGE') {
+          const stage = message.payload.stage as VisionStage
+          bubble?.setStage(stage, message.payload.message)
+        } else if (message.type === 'STREAM_CHUNK') {
+          bubble?.appendChunk(message.payload.delta || '')
+        } else if (message.type === 'STREAM_END') {
+          bubble?.finalize()
+          listenerCleanup.clearTimeout()
+          listenerCleanup.cleanup()
+        } else if (message.type === 'STREAM_ERROR') {
+          bubble?.showError(message.payload.error || 'An error occurred')
+          listenerCleanup.clearTimeout()
+          listenerCleanup.cleanup()
         }
       }
 
       port.onMessage.addListener(streamListener)
-      log.log('Floating bubble created')
+      const listenerCleanup = setupStreamListenerCleanup(port, streamListener, requestId, bubble)
+      log.log('Stream listener attached', { hasBubble: !!bubble, requestId })
+    } else {
+      log.warn('No active port available for streaming')
     }
-    // === END floating bubble ===
     
     // Send through port connection (same as regular chat)
     const success = sendPortMessage({

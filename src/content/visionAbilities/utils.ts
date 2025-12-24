@@ -1,6 +1,9 @@
 import { createLogger } from '../../lib/core/debug'
+import { bubbleManager, type FloatingResponseBubble } from './FloatingResponseBubble'
 
 const log = createLogger('VisionUtils')
+
+const VISION_TIMEOUT_MS = 30000
 
 /**
  * Convert image to base64 (with size limit)
@@ -138,17 +141,89 @@ export function getSurroundingText(selection: Selection): string {
  * Get avatar container position for bubble positioning
  */
 export function getAvatarPosition(): { x: number; y: number } | null {
-  const avatarWrapper = document.querySelector('.yumi-overlay-wrapper') as HTMLElement
+  const avatarWrapper = document.querySelector('#yumi-overlay-wrapper') as HTMLElement
   if (!avatarWrapper) {
     log.warn('Avatar wrapper not found')
     return null
   }
-  
+
   const rect = avatarWrapper.getBoundingClientRect()
   return {
-    x: rect.right, // Right edge of avatar
-    y: rect.top    // Top edge of avatar
+    x: rect.right,
+    y: rect.top
   }
+}
+
+/**
+ * Get avatar position with fallback to bottom-right corner
+ * Use this when bubble must be shown regardless of avatar state
+ */
+export function getAvatarPositionWithFallback(): { x: number; y: number } {
+  const avatarPos = getAvatarPosition()
+  if (avatarPos) return avatarPos
+
+  return {
+    x: window.innerWidth - 20,
+    y: window.innerHeight - 150
+  }
+}
+
+export interface StreamListenerCleanup {
+  cleanup: () => void
+  clearTimeout: () => void
+}
+
+/**
+ * Setup stream listener with automatic cleanup on timeout or port disconnect
+ * Returns cleanup functions for manual cleanup if needed
+ */
+export function setupStreamListenerCleanup(
+  port: chrome.runtime.Port,
+  listener: (msg: unknown) => void,
+  requestId: string,
+  bubble: FloatingResponseBubble | null,
+  timeoutMs: number = VISION_TIMEOUT_MS
+): StreamListenerCleanup {
+  let isCleanedUp = false
+
+  const cleanup = () => {
+    if (isCleanedUp) return
+    isCleanedUp = true
+
+    try {
+      port.onMessage.removeListener(listener)
+    } catch {
+      /** Port may already be disconnected */
+    }
+    bubbleManager.remove(requestId)
+    log.log('Stream listener cleaned up for:', requestId)
+  }
+
+  const timeout = window.setTimeout(() => {
+    if (bubble?.isShowing()) {
+      bubble.showError('Request timed out')
+    }
+    cleanup()
+    log.warn('Vision request timed out:', requestId)
+  }, timeoutMs)
+
+  const clearTimeoutFn = () => {
+    window.clearTimeout(timeout)
+  }
+
+  const disconnectListener = () => {
+    clearTimeoutFn()
+    cleanup()
+    log.log('Port disconnected, cleaned up:', requestId)
+  }
+
+  try {
+    port.onDisconnect.addListener(disconnectListener)
+  } catch {
+    /** Port may already be disconnected */
+  }
+
+  return { cleanup, clearTimeout: clearTimeoutFn }
 }
 
 /**

@@ -11,8 +11,10 @@
 
 import { createLogger } from '../../core/debug'
 import type { Memory } from '../types'
+import { FEEDBACK_CONFIG } from '../types'
 import { getFollowUpCandidates, type FollowUpCandidate, extractSubject } from './followUp'
 import { findContextMatches, type PageContext } from './contextMatcher'
+import { adjustFeedbackScore, calculateEffectiveImportance } from '../feedback'
 
 const log = createLogger('ProactiveController')
 
@@ -315,6 +317,7 @@ export class ProactiveMemoryController {
 
   /**
    * Select a random memory to recall
+   * Now uses feedback-aware importance for better recall selection.
    */
   private selectRandomRecall(
     memories: Memory[],
@@ -330,8 +333,15 @@ export class ProactiveMemoryController {
 
     const eligible = memories.filter((m) => {
       if (m.type === 'identity') return false
-      if (m.importance < 0.5) return false
+
+      /** Use effective importance (includes feedback) for filtering */
+      const effectiveImportance = calculateEffectiveImportance(m)
+      if (effectiveImportance < 0.4) return false
       if (m.confidence < 0.6) return false
+
+      /** Skip memories with strongly negative feedback */
+      if (m.feedbackScore < -0.5) return false
+
       if (this.isOnCooldown(m.id, cooldowns, now)) return false
       return true
     })
@@ -343,11 +353,16 @@ export class ProactiveMemoryController {
       const recencyWeight = Math.min(daysSinceAccessed / 14, 1)
       const engagementWeight = Math.min(m.accessCount * 0.1, 0.5)
 
+      /** Use effective importance and add feedback bonus */
+      const effectiveImportance = calculateEffectiveImportance(m)
+      const feedbackBonus = Math.max(0, m.feedbackScore * 0.2)
+
       const weight =
-        m.importance * 0.5 +
-        m.confidence * 0.2 +
-        recencyWeight * 0.2 +
-        engagementWeight * 0.1
+        effectiveImportance * 0.4 +
+        m.confidence * 0.15 +
+        recencyWeight * 0.15 +
+        engagementWeight * 0.1 +
+        feedbackBonus * 0.2
 
       return { memory: m, weight }
     })
@@ -415,26 +430,50 @@ export class ProactiveMemoryController {
   }
 
   /**
-   * Record user feedback for a proactive message
+   * Record user feedback for a proactive message.
+   * Returns the new feedback score to be persisted to memory.
+   *
+   * @param memoryId - ID of the memory
+   * @param memory - The memory object (for calculating new feedback score)
+   * @param action - User action ('engaged', 'dismissed', 'ignored')
+   * @returns New feedback score, or null if no update needed
    */
-  recordFeedback(memoryId: string, action: 'engaged' | 'dismissed' | 'ignored'): void {
+  recordFeedback(
+    memoryId: string,
+    memory: Memory | undefined,
+    action: 'engaged' | 'dismissed' | 'ignored'
+  ): number | null {
     const historyEntry = this.state.history.find(h => h.memoryId === memoryId && h.engaged === null)
     if (historyEntry) {
       historyEntry.engaged = action === 'engaged'
     }
 
+    let newFeedbackScore: number | null = null
+
     switch (action) {
       case 'engaged':
+        /** Boost feedback score when user engages */
+        if (memory) {
+          newFeedbackScore = adjustFeedbackScore(memory, true)
+          log.log(`[ProactiveController] Engaged with memory ${memoryId}, new feedback: ${newFeedbackScore.toFixed(2)}`)
+        }
         break
       case 'dismissed':
+        /** Reduce feedback score when dismissed */
+        if (memory) {
+          newFeedbackScore = adjustFeedbackScore(memory, false)
+          log.log(`[ProactiveController] Dismissed memory ${memoryId}, new feedback: ${newFeedbackScore.toFixed(2)}`)
+        }
         this.state.memoryCooldowns[memoryId] = Date.now() + 48 * 60 * 60 * 1000
         break
       case 'ignored':
+        /** No feedback change for ignored, just cooldown */
         this.state.memoryCooldowns[memoryId] = Date.now() + 24 * 60 * 60 * 1000
         break
     }
 
     this.saveState()
+    return newFeedbackScore
   }
 
   /**
